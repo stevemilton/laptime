@@ -1,0 +1,100 @@
+name: laptime
+description: "Strava for track days. Record GPS traces, phone telemetry, and weather at amateur motorsport events."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.11.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State Management
+  flutter_riverpod: ^2.6.1
+  riverpod_annotation: ^2.6.1
+
+  # Routing
+  go_router: ^14.8.1
+
+  # Backend
+  supabase_flutter: ^2.8.4
+
+  # Local Database (offline-first)
+  drift: ^2.22.1
+  sqlite3_flutter_libs: ^0.5.28
+
+  # GPS / Location
+  geolocator: ^13.0.2
+
+  # Sensors
+  sensors_plus: ^6.1.1
+
+  # Maps
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+
+  # HTTP
+  dio: ^5.7.0
+
+  # Auth
+  sign_in_with_apple: ^6.1.4
+  google_sign_in: ^6.2.2
+
+  # Images
+  image_picker: ^1.1.2
+
+  # Share
+  share_plus: ^10.1.4
+
+  # Icons
+  lucide_icons: ^0.257.0
+
+  # Connectivity
+  connectivity_plus: ^6.1.1
+
+  # Serialization
+  freezed_annotation: ^2.4.4
+  json_annotation: ^4.9.0
+
+  # Utils
+  uuid: ^4.5.1
+  intl: ^0.19.0
+  path_provider: ^2.1.5
+  url_launcher: ^6.3.1
+  collection: ^1.19.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+  # Code generation
+  build_runner: ^2.4.13
+  riverpod_generator: ^2.6.3
+  freezed: ^2.5.7
+  json_serializable: ^6.9.0
+  drift_dev: ^2.22.1
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/legal/
+
+  fonts:
+    - family: Rufner
+      fonts:
+        - asset: assets/fonts/Rufner-Regular.ttf
+        - asset: assets/fonts/Rufner-Bold.ttf
+          weight: 700
+
+    - family: RethinkSans
+      fonts:
+        - asset: assets/fonts/RethinkSans-Regular.ttf
+        - asset: assets/fonts/RethinkSans-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/RethinkSans-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/RethinkSans-Bold.ttf
+          weight: 700
