@@ -6,11 +6,14 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../../core/database/app_database.dart';
+import '../../../core/services/sensor_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/format_utils.dart';
 import '../../../core/widgets/widgets.dart';
+import '../../telemetry/data/telemetry_processor.dart';
+import '../../telemetry/presentation/telemetry_chart.dart';
 import '../data/session_repository.dart';
 
 /// Single lap detail screen.
@@ -37,6 +40,7 @@ class _LapDetailScreenState extends ConsumerState<LapDetailScreen> {
   LocalSession? _session;
   LocalCircuit? _circuit;
   List<LocalLap> _allLaps = [];
+  ProcessedTelemetry? _telemetry;
   bool _isLoading = true;
 
   @override
@@ -58,6 +62,24 @@ class _LapDetailScreenState extends ConsumerState<LapDetailScreen> {
 
     final allLaps = await repo.getSessionLaps(widget.sessionId);
 
+    // Load sensor data for telemetry charts
+    ProcessedTelemetry? telemetry;
+    final sensorData = await repo.getLapSensorData(widget.lapId);
+    if (sensorData != null) {
+      final snapshot = LapSensorSnapshot(
+        timestamps: _decodeJsonDoubleList(sensorData.timestampsJson),
+        accelX: _decodeJsonDoubleList(sensorData.accelXJson),
+        accelY: _decodeJsonDoubleList(sensorData.accelYJson),
+        accelZ: _decodeJsonDoubleList(sensorData.accelZJson),
+        gyroX: _decodeJsonDoubleList(sensorData.gyroXJson),
+        gyroY: _decodeJsonDoubleList(sensorData.gyroYJson),
+        gyroZ: _decodeJsonDoubleList(sensorData.gyroZJson),
+        magHeading: _decodeJsonDoubleList(sensorData.magHeadingJson),
+        baroPressure: _decodeJsonDoubleList(sensorData.baroPressureJson),
+      );
+      telemetry = TelemetryProcessor.processSensorData(snapshot);
+    }
+
     if (!mounted) return;
 
     setState(() {
@@ -65,6 +87,7 @@ class _LapDetailScreenState extends ConsumerState<LapDetailScreen> {
       _session = session;
       _circuit = circuit;
       _allLaps = allLaps;
+      _telemetry = telemetry;
       _isLoading = false;
     });
   }
@@ -146,12 +169,12 @@ class _LapDetailScreenState extends ConsumerState<LapDetailScreen> {
 
         const SizedBox(height: 24),
 
-        // Telemetry charts placeholder
+        // Telemetry charts
         const SectionHeader(title: 'Telemetry'),
         const SizedBox(height: 4),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: _buildTelemetryPlaceholder(),
+          child: _buildTelemetryCharts(),
         ),
       ],
     );
@@ -280,42 +303,85 @@ class _LapDetailScreenState extends ConsumerState<LapDetailScreen> {
     );
   }
 
-  Widget _buildTelemetryPlaceholder() {
-    return AppCard(
-      padding: EdgeInsets.zero,
-      child: Container(
-        height: 160,
-        decoration: BoxDecoration(
-          color: AppColors.ghost,
-          borderRadius: BorderRadius.circular(AppRadii.lg),
-        ),
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                LucideIcons.lineChart,
-                size: 32,
-                color: AppColors.textTertiary,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Telemetry Charts',
-                style: AppTypography.bodyMedium.copyWith(
-                  color: AppColors.textTertiary,
+  List<double> _decodeJsonDoubleList(String? json) {
+    if (json == null || json.isEmpty) return [];
+    try {
+      final decoded = jsonDecode(json) as List<dynamic>;
+      return decoded.map((e) => (e as num).toDouble()).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Widget _buildTelemetryCharts() {
+    final t = _telemetry;
+    if (t == null) {
+      return AppCard(
+        padding: EdgeInsets.zero,
+        child: Container(
+          height: 120,
+          decoration: BoxDecoration(
+            color: AppColors.ghost,
+            borderRadius: BorderRadius.circular(AppRadii.lg),
+          ),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(LucideIcons.lineChart, size: 28, color: AppColors.textTertiary),
+                const SizedBox(height: 8),
+                Text(
+                  'No sensor data recorded for this lap',
+                  style: AppTypography.bodySmall.copyWith(
+                    color: AppColors.textTertiary,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Accelerometer, gyroscope, and speed data',
-                style: AppTypography.bodySmall.copyWith(
-                  color: AppColors.textTertiary,
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-      ),
+      );
+    }
+
+    return Column(
+      children: [
+        // Speed chart
+        AppCard(
+          padding: const EdgeInsets.all(16),
+          child: TelemetryChart(
+            title: 'Speed (km/h)',
+            data1: t.speed,
+            label1: 'Speed',
+            yAxisLabel: 'km/h',
+            height: 180,
+          ),
+        ),
+        const SizedBox(height: 12),
+        // Lateral G chart
+        AppCard(
+          padding: const EdgeInsets.all(16),
+          child: TelemetryChart(
+            title: 'Lateral G',
+            data1: t.lateralG,
+            label1: 'Lateral G',
+            yAxisLabel: 'g',
+            height: 180,
+          ),
+        ),
+        const SizedBox(height: 12),
+        // Longitudinal G chart
+        AppCard(
+          padding: const EdgeInsets.all(16),
+          child: TelemetryChart(
+            title: 'Braking / Acceleration',
+            data1: t.longitudinalG,
+            label1: 'Long. G',
+            yAxisLabel: 'g',
+            height: 180,
+            color1: AppColors.red,
+          ),
+        ),
+      ],
     );
   }
 }

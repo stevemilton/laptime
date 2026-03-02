@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/theme/app_theme.dart';
@@ -192,9 +193,11 @@ class _DisclaimerScreenState extends ConsumerState<DisclaimerScreen> {
       final client = ref.read(supabaseClientProvider);
       final repo = DisclaimerRepository(db, client);
 
+      final packageInfo = await PackageInfo.fromPlatform();
+
       await repo.accept(
         userId: user.id,
-        appVersion: '0.1.0', // TODO: read from package info
+        appVersion: packageInfo.version,
       );
 
       // Invalidate the provider so router re-evaluates

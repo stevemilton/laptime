@@ -188,9 +188,7 @@ class _RecordingView extends ConsumerWidget {
                         .read(recordingControllerProvider.notifier)
                         .stopSession();
                     if (context.mounted && sessionId != null) {
-                      // Navigate to session edit
-                      context.go('/record');
-                      // TODO: Navigate to session edit screen
+                      context.go('/session/$sessionId/edit');
                     }
                   },
                   style: FilledButton.styleFrom(

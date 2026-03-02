@@ -13,6 +13,7 @@ import '../../features/disclaimer/presentation/disclaimer_screen.dart';
 import '../../features/recording/presentation/recording_screen.dart';
 import '../../features/session/presentation/session_detail_screen.dart';
 import '../../features/session/presentation/session_edit_screen.dart';
+import '../../features/session/presentation/sessions_list_screen.dart';
 import '../../features/session/presentation/lap_detail_screen.dart';
 import '../../features/profile/presentation/edit_profile_screen.dart';
 import '../../features/garage/presentation/car_form_screen.dart';
@@ -89,6 +90,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/recording',
         name: RouteNames.recording,
         builder: (context, state) => const RecordingScreen(),
+      ),
+
+      // All sessions list (full-screen, no bottom tabs)
+      GoRoute(
+        path: '/sessions',
+        name: RouteNames.sessions,
+        builder: (context, state) => const SessionsListScreen(),
       ),
 
       // Session detail (full-screen, no bottom tabs)

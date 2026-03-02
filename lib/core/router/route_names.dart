@@ -11,6 +11,7 @@ abstract final class RouteNames {
 
   // Sub-screens
   static const recording = 'recording';
+  static const sessions = 'sessions';
   static const sessionEdit = 'sessionEdit';
   static const sessionDetail = 'sessionDetail';
   static const lapDetail = 'lapDetail';

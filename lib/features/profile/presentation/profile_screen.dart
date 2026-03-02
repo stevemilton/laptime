@@ -14,7 +14,9 @@ import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/stat_cell.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/empty_state.dart';
+import 'package:drift/drift.dart' show OrderingTerm;
 import '../../../core/database/app_database.dart';
+import '../../../core/utils/format_utils.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../data/profile_repository.dart';
 
@@ -53,6 +55,27 @@ final profileStatsProvider = FutureProvider<ProfileStats>((ref) async {
   return repo.getStats(user.id);
 });
 
+/// Recent sessions provider - watches last 5 sessions for the user.
+final recentSessionsProvider = StreamProvider<List<LocalSession>>((ref) {
+  final user = ref.watch(currentUserProvider);
+  if (user == null) return Stream.value([]);
+  final db = ref.watch(databaseProvider);
+  return (db.select(db.localSessions)
+        ..where((t) => t.userId.equals(user.id))
+        ..orderBy([(t) => OrderingTerm.desc(t.startedAt)])
+        ..limit(5))
+      .watch();
+});
+
+/// Best lap for a session (profile card).
+final _profileSessionBestLapProvider =
+    FutureProvider.family<int?, String>((ref, sessionId) async {
+  final db = ref.read(databaseProvider);
+  final laps = await db.getSessionLaps(sessionId);
+  if (laps.isEmpty) return null;
+  return laps.map((l) => l.durationMs).reduce((a, b) => a < b ? a : b);
+});
+
 /// Profile tab screen with avatar, stats, garage, and recent sessions.
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -62,6 +85,7 @@ class ProfileScreen extends ConsumerWidget {
     final profileAsync = ref.watch(profileProvider);
     final carsAsync = ref.watch(userCarsProvider);
     final statsAsync = ref.watch(profileStatsProvider);
+    final sessionsAsync = ref.watch(recentSessionsProvider);
 
     return SafeArea(
       child: ListView(
@@ -250,19 +274,49 @@ class ProfileScreen extends ConsumerWidget {
             title: 'Recent Sessions',
             trailing: SectionAction(
               label: 'View All',
-              onTap: () {
-                // TODO: Navigate to all sessions
-              },
+              onTap: () => context.push('/sessions'),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: EmptyState(
-              icon: LucideIcons.timer,
-              title: 'No sessions yet',
-              subtitle: 'Record your first track session to see it here.',
+          sessionsAsync.when(
+            data: (sessions) {
+              if (sessions.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: EmptyState(
+                    icon: LucideIcons.timer,
+                    title: 'No sessions yet',
+                    subtitle:
+                        'Record your first track session to see it here.',
+                  ),
+                );
+              }
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Column(
+                  children: [
+                    for (int i = 0; i < sessions.length; i++) ...[
+                      _SessionCard(session: sessions[i]),
+                      if (i < sessions.length - 1) const SizedBox(height: 8),
+                    ],
+                  ],
+                ),
+              );
+            },
+            loading: () => const Padding(
+              padding: EdgeInsets.all(24),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+            error: (_, _) => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: EmptyState(
+                icon: LucideIcons.alertCircle,
+                title: 'Error loading sessions',
+                subtitle: 'Pull to refresh.',
+              ),
             ),
           ),
+
+          const SizedBox(height: 32),
         ],
       ),
     );
@@ -275,6 +329,86 @@ class ProfileScreen extends ConsumerWidget {
       return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
     }
     return name[0].toUpperCase();
+  }
+}
+
+/// A compact session card for the recent sessions list.
+class _SessionCard extends ConsumerWidget {
+  const _SessionCard({required this.session});
+
+  final LocalSession session;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final bestLapAsync =
+        ref.watch(_profileSessionBestLapProvider(session.id));
+    final bestLapMs = bestLapAsync.value;
+
+    return GestureDetector(
+      onTap: () => context.push('/session/${session.id}'),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(AppRadii.md),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            // Best lap time
+            if (bestLapMs != null) ...[
+              Text(
+                FormatUtils.formatLapTime(bestLapMs),
+                style: AppTypography.headlineSmall.copyWith(
+                  color: AppColors.green,
+                  fontSize: 16,
+                ),
+              ),
+              const SizedBox(width: 12),
+            ],
+            // Date
+            Expanded(
+              child: Text(
+                _formatDate(session.startedAt),
+                style: AppTypography.bodySmall.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
+            // Track condition pill
+            if (session.trackCondition != null) ...[
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.purplePale,
+                  borderRadius: BorderRadius.circular(100),
+                ),
+                child: Text(
+                  session.trackCondition!,
+                  style: AppTypography.labelSmall.copyWith(
+                    color: AppColors.purple,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
+            const Icon(LucideIcons.chevronRight,
+                size: 16, color: AppColors.textTertiary),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    final diff = now.difference(date);
+    if (diff.inDays == 0) return 'Today';
+    if (diff.inDays == 1) return 'Yesterday';
+    if (diff.inDays < 7) return '${diff.inDays} days ago';
+    return '${date.day}/${date.month}/${date.year}';
   }
 }
 
