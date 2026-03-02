@@ -1,346 +1,359 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/app_shadows.dart';
+import '../../../core/providers/database_provider.dart';
+import '../../../core/providers/supabase_provider.dart';
+import '../../../core/widgets/app_avatar.dart';
+import '../../../core/widgets/app_pill.dart';
+import '../../../core/widgets/app_card.dart';
+import '../../../core/widgets/stat_cell.dart';
+import '../../../core/widgets/section_header.dart';
+import '../../../core/widgets/empty_state.dart';
+import '../../../core/database/app_database.dart';
+import '../../auth/presentation/auth_controller.dart';
+import '../data/profile_repository.dart';
 
-class ProfileScreen extends StatelessWidget {
+/// Profile provider - watches the current user's profile.
+final profileProvider = StreamProvider<LocalProfile?>((ref) {
+  final user = ref.watch(currentUserProvider);
+  if (user == null) return Stream.value(null);
+  final db = ref.watch(databaseProvider);
+  return (db.select(db.localProfiles)
+        ..where((t) => t.id.equals(user.id)))
+      .watchSingleOrNull();
+});
+
+/// Cars provider - watches the user's garage.
+final userCarsProvider = StreamProvider<List<LocalCar>>((ref) {
+  final user = ref.watch(currentUserProvider);
+  if (user == null) return Stream.value([]);
+  final db = ref.watch(databaseProvider);
+  return db.watchUserCars(user.id);
+});
+
+/// Stats provider
+final profileStatsProvider = FutureProvider<ProfileStats>((ref) async {
+  final user = ref.watch(currentUserProvider);
+  if (user == null) {
+    return ProfileStats(
+      sessionCount: 0,
+      circuitCount: 0,
+      lapCount: 0,
+      p1Count: 0,
+    );
+  }
+  final db = ref.read(databaseProvider);
+  final client = ref.read(supabaseClientProvider);
+  final repo = ProfileRepository(db, client);
+  return repo.getStats(user.id);
+});
+
+/// Profile tab screen with avatar, stats, garage, and recent sessions.
+class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profileAsync = ref.watch(profileProvider);
+    final carsAsync = ref.watch(userCarsProvider);
+    final statsAsync = ref.watch(profileStatsProvider);
+
     return SafeArea(
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+      child: ListView(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        children: [
+          // Profile header
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Row(
+              children: [
+                AppAvatar.xl(
+                  imageUrl: profileAsync.value?.avatarUrl,
+                  initials: _getInitials(profileAsync.value?.displayName),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        profileAsync.value?.displayName ?? 'Driver',
+                        style: AppTypography.headlineMedium,
+                      ),
+                      if (profileAsync.value?.handle != null)
+                        Text(
+                          '@${profileAsync.value!.handle}',
+                          style: AppTypography.bodyMedium.copyWith(
+                            color: AppColors.textTertiary,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Action pills
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Row(
+              children: [
+                AppPill.outlined(
+                  label: 'Edit Profile',
+                  icon: LucideIcons.pencil,
+                  onTap: () => context.push('/edit-profile'),
+                ),
+                const SizedBox(width: 8),
+                AppPill.outlined(
+                  label: 'Settings',
+                  icon: LucideIcons.settings,
+                  onTap: () {
+                    // TODO: Navigate to settings
+                  },
+                ),
+                const Spacer(),
+                AppPill.outlined(
+                  label: 'Sign Out',
+                  icon: LucideIcons.logOut,
+                  foregroundColor: AppColors.red,
+                  borderColor: AppColors.red.withValues(alpha: 0.3),
+                  onTap: () {
+                    ref.read(authControllerProvider.notifier).signOut();
+                  },
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // Stats grid
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: AppCard(
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  Text('Profile', style: AppTypography.headlineLarge),
-                  _HeaderAction(icon: LucideIcons.settings, onTap: () {}),
+                  StatCell(
+                    value: statsAsync.value?.sessionCount.toString() ?? '0',
+                    label: 'Sessions',
+                  ),
+                  StatCell(
+                    value: statsAsync.value?.circuitCount.toString() ?? '0',
+                    label: 'Circuits',
+                  ),
+                  StatCell(
+                    value: statsAsync.value?.lapCount.toString() ?? '0',
+                    label: 'Laps',
+                  ),
+                  StatCell(
+                    value: statsAsync.value?.p1Count.toString() ?? '0',
+                    label: 'P1s',
+                    valueColor: AppColors.gold,
+                  ),
                 ],
               ),
             ),
+          ),
 
-            // Profile card
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-              child: Row(
-                children: [
-                  // Avatar
-                  Container(
-                    width: 64,
-                    height: 64,
-                    decoration: BoxDecoration(
-                      color: AppColors.purpleLight,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: Text(
-                        'YN',
-                        style: AppTypography.headlineSmall.copyWith(
-                          color: AppColors.purple,
-                          fontSize: 22,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+          const SizedBox(height: 24),
+
+          // Garage section
+          SectionHeader(
+            title: 'Garage',
+            trailing: SectionAction(
+              label: 'Add',
+              onTap: () => context.push('/car/new'),
+            ),
+          ),
+
+          carsAsync.when(
+            data: (cars) {
+              if (cars.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: AppCard(
+                    child: Row(
                       children: [
-                        Text(
-                          'Your Name',
-                          style: AppTypography.bodyLarge.copyWith(
-                            fontWeight: FontWeight.w500,
-                            fontSize: 20,
-                            letterSpacing: -0.3,
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: AppColors.purplePale,
+                            borderRadius: BorderRadius.circular(AppRadii.md),
+                          ),
+                          child: const Icon(
+                            LucideIcons.car,
+                            color: AppColors.purple,
                           ),
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '@yourhandle',
-                          style: AppTypography.bodySmall,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Add your first car to get started',
+                            style: AppTypography.bodyMedium.copyWith(
+                              color: AppColors.textTertiary,
+                            ),
+                          ),
                         ),
-                        const SizedBox(height: 6),
-                        Row(
-                          children: [
-                            _ProfilePill(label: 'Edit Profile', outlined: true),
-                            const SizedBox(width: 8),
-                            _ProfilePill(label: 'Share', outlined: false),
-                          ],
+                        const Icon(
+                          LucideIcons.plus,
+                          color: AppColors.purple,
+                          size: 20,
                         ),
                       ],
                     ),
+                    onTap: () => context.push('/car/new'),
                   ),
-                ],
+                );
+              }
+
+              return SizedBox(
+                height: 100,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  itemCount: cars.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 12),
+                  itemBuilder: (context, index) {
+                    final car = cars[index];
+                    return _CarCard(
+                      car: car,
+                      onTap: () => context.push('/car/${car.id}'),
+                    );
+                  },
+                ),
+              );
+            },
+            loading: () => const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: CircularProgressIndicator(),
               ),
             ),
+            error: (e, _) => Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text('Error loading cars: $e'),
+            ),
+          ),
 
-            // Stats grid
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-              child: Row(
-                children: [
-                  _StatBox(value: '24', label: 'Sessions'),
-                  const SizedBox(width: 8),
-                  _StatBox(value: '8', label: 'Circuits'),
-                  const SizedBox(width: 8),
-                  _StatBox(value: '143', label: 'Laps'),
-                  const SizedBox(width: 8),
-                  _StatBox(value: '3', label: 'P1s'),
-                ],
-              ),
-            ),
+          const SizedBox(height: 24),
 
-            // Garage section
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
-              child: Text('GARAGE', style: AppTypography.sectionLabel),
+          // Recent sessions section
+          SectionHeader(
+            title: 'Recent Sessions',
+            trailing: SectionAction(
+              label: 'View All',
+              onTap: () {
+                // TODO: Navigate to all sessions
+              },
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
-              child: Column(
-                children: [
-                  _CarCard(
-                    name: 'BMW M2 CS',
-                    detail: '2023 \u00B7 Petrol Blue \u00B7 Road',
-                  ),
-                  const SizedBox(height: 8),
-                  _AddButton(label: '+ Add Car'),
-                ],
-              ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: EmptyState(
+              icon: LucideIcons.timer,
+              title: 'No sessions yet',
+              subtitle: 'Record your first track session to see it here.',
             ),
-
-            // Recent sessions
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
-              child: Text('RECENT SESSIONS', style: AppTypography.sectionLabel),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
-              child: Column(
-                children: [
-                  _SessionCard(
-                    circuit: 'Silverstone GP',
-                    time: '1:59.204',
-                    date: 'Yesterday',
-                    laps: 12,
-                  ),
-                  const SizedBox(height: 8),
-                  _SessionCard(
-                    circuit: 'Snetterton 300',
-                    time: '2:04.881',
-                    date: '2 weeks ago',
-                    laps: 16,
-                  ),
-                  const SizedBox(height: 8),
-                  _SessionCard(
-                    circuit: 'Brands Hatch Indy',
-                    time: '59.114',
-                    date: '3 weeks ago',
-                    laps: 10,
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 24),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
+
+  String? _getInitials(String? name) {
+    if (name == null || name.isEmpty) return null;
+    final parts = name.split(' ');
+    if (parts.length >= 2) {
+      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+    }
+    return name[0].toUpperCase();
+  }
 }
 
-class _HeaderAction extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
+class _CarCard extends StatelessWidget {
+  const _CarCard({required this.car, this.onTap});
 
-  const _HeaderAction({required this.icon, required this.onTap});
+  final LocalCar car;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 36,
-        height: 36,
-        decoration: const BoxDecoration(
-          color: AppColors.ghost,
-          shape: BoxShape.circle,
-        ),
-        child: Icon(icon, size: 18, color: AppColors.textSecondary),
-      ),
-    );
-  }
-}
-
-class _ProfilePill extends StatelessWidget {
-  final String label;
-  final bool outlined;
-
-  const _ProfilePill({required this.label, required this.outlined});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-      decoration: BoxDecoration(
-        color: outlined ? Colors.transparent : AppColors.ghost,
-        borderRadius: BorderRadius.circular(100),
-        border: outlined ? Border.all(color: AppColors.purple, width: 1.5) : null,
-      ),
-      child: Text(
-        label,
-        style: AppTypography.bodySmall.copyWith(
-          color: outlined ? AppColors.purple : AppColors.textSecondary,
-          fontWeight: FontWeight.w500,
-          fontSize: 12,
-        ),
-      ),
-    );
-  }
-}
-
-class _StatBox extends StatelessWidget {
-  final String value;
-  final String label;
-
-  const _StatBox({required this.value, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
+        width: 160,
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: AppColors.ghost,
+          color: AppColors.white,
           borderRadius: BorderRadius.circular(AppRadii.md),
+          border: Border.all(color: AppColors.borderLight),
+          boxShadow: AppShadows.sm,
         ),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(value, style: AppTypography.statNumber),
-            const SizedBox(height: 2),
+            Row(
+              children: [
+                const Icon(LucideIcons.car, size: 16, color: AppColors.purple),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    car.make,
+                    style: AppTypography.bodySmall.copyWith(
+                      color: AppColors.textTertiary,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
             Text(
-              label.toUpperCase(),
-              style: AppTypography.labelSmall.copyWith(fontSize: 10),
+              car.model,
+              style: AppTypography.headlineSmall.copyWith(fontSize: 16),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const Spacer(),
+            Row(
+              children: [
+                if (car.year != null)
+                  Text(
+                    car.year.toString(),
+                    style: AppTypography.bodySmall.copyWith(
+                      color: AppColors.textTertiary,
+                    ),
+                  ),
+                if (car.carClass != null) ...[
+                  if (car.year != null)
+                    Text(
+                      ' / ',
+                      style: AppTypography.bodySmall.copyWith(
+                        color: AppColors.textTertiary,
+                      ),
+                    ),
+                  Text(
+                    car.carClass!,
+                    style: AppTypography.bodySmall.copyWith(
+                      color: AppColors.purple,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _CarCard extends StatelessWidget {
-  final String name;
-  final String detail;
-
-  const _CarCard({required this.name, required this.detail});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(AppRadii.md),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(name, style: AppTypography.labelLarge.copyWith(fontSize: 15)),
-              const SizedBox(height: 2),
-              Text(detail, style: AppTypography.bodySmall),
-            ],
-          ),
-          Icon(LucideIcons.car, size: 20, color: AppColors.textTertiary),
-        ],
-      ),
-    );
-  }
-}
-
-class _AddButton extends StatelessWidget {
-  final String label;
-
-  const _AddButton({required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppRadii.md),
-        border: Border.all(color: AppColors.purple, width: 1.5),
-      ),
-      child: Center(
-        child: Text(
-          label,
-          style: AppTypography.labelLarge.copyWith(color: AppColors.purple),
-        ),
-      ),
-    );
-  }
-}
-
-class _SessionCard extends StatelessWidget {
-  final String circuit;
-  final String time;
-  final String date;
-  final int laps;
-
-  const _SessionCard({
-    required this.circuit,
-    required this.time,
-    required this.date,
-    required this.laps,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(AppRadii.md),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(circuit, style: AppTypography.labelLarge),
-              const SizedBox(height: 2),
-              Text(
-                '$date \u00B7 $laps laps',
-                style: AppTypography.bodySmall,
-              ),
-            ],
-          ),
-          Text(
-            time,
-            style: AppTypography.bodyMedium.copyWith(
-              fontWeight: FontWeight.w200,
-              letterSpacing: -0.8,
-              fontSize: 18,
-              fontFamily: 'Rufner',
-            ),
-          ),
-        ],
       ),
     );
   }

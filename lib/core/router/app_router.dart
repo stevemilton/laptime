@@ -11,6 +11,11 @@ import '../../features/auth/presentation/login_screen.dart';
 import '../../features/auth/presentation/auth_controller.dart';
 import '../../features/disclaimer/presentation/disclaimer_screen.dart';
 import '../../features/recording/presentation/recording_screen.dart';
+import '../../features/session/presentation/session_detail_screen.dart';
+import '../../features/session/presentation/session_edit_screen.dart';
+import '../../features/session/presentation/lap_detail_screen.dart';
+import '../../features/profile/presentation/edit_profile_screen.dart';
+import '../../features/garage/presentation/car_form_screen.dart';
 import '../theme/app_colors.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -78,6 +83,59 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/recording',
         name: RouteNames.recording,
         builder: (context, state) => const RecordingScreen(),
+      ),
+
+      // Session detail (full-screen, no bottom tabs)
+      GoRoute(
+        path: '/session/:id',
+        name: RouteNames.sessionDetail,
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          return SessionDetailScreen(sessionId: id);
+        },
+      ),
+
+      // Session edit (full-screen, no bottom tabs)
+      GoRoute(
+        path: '/session/:id/edit',
+        name: RouteNames.sessionEdit,
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          return SessionEditScreen(sessionId: id);
+        },
+      ),
+
+      // Lap detail (full-screen, no bottom tabs)
+      GoRoute(
+        path: '/session/:id/lap/:lapId',
+        name: RouteNames.lapDetail,
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          final lapId = state.pathParameters['lapId']!;
+          return LapDetailScreen(sessionId: id, lapId: lapId);
+        },
+      ),
+
+      // Edit profile (full-screen)
+      GoRoute(
+        path: '/edit-profile',
+        name: RouteNames.editProfile,
+        builder: (context, state) => const EditProfileScreen(),
+      ),
+
+      // Car form - new or edit (full-screen)
+      GoRoute(
+        path: '/car/new',
+        name: '${RouteNames.carForm}-new',
+        builder: (context, state) => const CarFormScreen(),
+      ),
+      GoRoute(
+        path: '/car/:id',
+        name: RouteNames.carForm,
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          return CarFormScreen(carId: id);
+        },
       ),
 
       // Main app shell with bottom tabs

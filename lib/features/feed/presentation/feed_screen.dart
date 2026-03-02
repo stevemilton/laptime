@@ -1,81 +1,105 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/providers/supabase_provider.dart';
+import '../../../core/widgets/app_avatar.dart';
+import '../../../core/widgets/app_pill.dart';
+import '../../../core/widgets/app_card.dart';
+import '../../../core/widgets/p1_badge.dart';
+import '../../../core/widgets/empty_state.dart';
+import '../../../core/utils/format_utils.dart';
+import '../data/feed_repository.dart';
 
-class FeedScreen extends StatefulWidget {
+/// Feed provider for the "Following" tab.
+final followingFeedProvider = FutureProvider<List<FeedItem>>((ref) async {
+  final user = ref.watch(currentUserProvider);
+  if (user == null) return [];
+  final client = ref.read(supabaseClientProvider);
+  final repo = FeedRepository(client);
+  return repo.getFollowingFeed(userId: user.id);
+});
+
+/// Feed provider for the "Nearby" tab.
+final nearbyFeedProvider = FutureProvider<List<FeedItem>>((ref) async {
+  final client = ref.read(supabaseClientProvider);
+  final repo = FeedRepository(client);
+  return repo.getNearbyFeed();
+});
+
+/// Feed tab screen with Following/Nearby/Teams tabs.
+class FeedScreen extends ConsumerStatefulWidget {
   const FeedScreen({super.key});
 
   @override
-  State<FeedScreen> createState() => _FeedScreenState();
+  ConsumerState<FeedScreen> createState() => _FeedScreenState();
 }
 
-class _FeedScreenState extends State<FeedScreen> {
-  int _selectedTab = 0;
-  final _tabs = ['Following', 'Nearby', 'Teams'];
+class _FeedScreenState extends ConsumerState<FeedScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return SafeArea(
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Header
           Padding(
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 4),
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text('Feed', style: AppTypography.headlineLarge),
-                Row(
-                  children: [
-                    _HeaderAction(icon: LucideIcons.userPlus, onTap: () {}),
-                    const SizedBox(width: 8),
-                    _HeaderAction(icon: LucideIcons.bell, onTap: () {}),
-                  ],
+                IconButton(
+                  onPressed: () {
+                    // TODO: Navigate to search/following
+                  },
+                  icon: const Icon(
+                    LucideIcons.userPlus,
+                    color: AppColors.purple,
+                  ),
                 ),
               ],
             ),
           ),
 
-          // Tabs
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
-            child: Container(
-              decoration: const BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(color: AppColors.border),
-                ),
-              ),
-              child: Row(
-                children: List.generate(_tabs.length, (i) {
-                  final isActive = i == _selectedTab;
-                  return GestureDetector(
-                    onTap: () => setState(() => _selectedTab = i),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      child: Text(
-                        _tabs[i],
-                        style: AppTypography.bodyMedium.copyWith(
-                          fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-                          color: isActive ? AppColors.textPrimary : AppColors.textTertiary,
-                        ),
-                      ),
-                    ),
-                  );
-                }),
-              ),
-            ),
+          // Tab bar
+          TabBar(
+            controller: _tabController,
+            labelColor: AppColors.purple,
+            unselectedLabelColor: AppColors.textTertiary,
+            indicatorColor: AppColors.purple,
+            indicatorSize: TabBarIndicatorSize.label,
+            tabs: const [
+              Tab(text: 'Following'),
+              Tab(text: 'Nearby'),
+              Tab(text: 'Teams'),
+            ],
           ),
 
-          // Feed content
+          // Tab content
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.only(top: 8),
-              itemCount: 3,
-              itemBuilder: (context, index) {
-                return _FeedItemPlaceholder(index: index);
-              },
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _FeedList(feedProvider: followingFeedProvider),
+                _FeedList(feedProvider: nearbyFeedProvider),
+                _EmptyTeamsFeed(),
+              ],
             ),
           ),
         ],
@@ -84,220 +108,128 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 }
 
-class _HeaderAction extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
+class _FeedList extends ConsumerWidget {
+  const _FeedList({required this.feedProvider});
 
-  const _HeaderAction({required this.icon, required this.onTap});
+  final FutureProvider<List<FeedItem>> feedProvider;
 
   @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: AppColors.ghost,
-          shape: BoxShape.circle,
-        ),
-        child: Icon(icon, size: 18, color: AppColors.textSecondary),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final feedAsync = ref.watch(feedProvider);
+
+    return feedAsync.when(
+      data: (items) {
+        if (items.isEmpty) {
+          return EmptyState(
+            icon: LucideIcons.rss,
+            title: 'No sessions yet',
+            subtitle: 'Follow other drivers to see their sessions here.',
+          );
+        }
+
+        return ListView.separated(
+          padding: const EdgeInsets.all(20),
+          itemCount: items.length,
+          separatorBuilder: (_, _) => const SizedBox(height: 12),
+          itemBuilder: (context, index) => _FeedCard(item: items[index]),
+        );
+      },
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(
+        child: Text('Error loading feed: $e'),
       ),
     );
   }
 }
 
-class _FeedItemPlaceholder extends StatelessWidget {
-  final int index;
+class _FeedCard extends StatelessWidget {
+  const _FeedCard({required this.item});
 
-  const _FeedItemPlaceholder({required this.index});
-
-  static const _mockData = [
-    {
-      'name': 'James Fletcher',
-      'handle': '@jfletcher',
-      'circuit': 'Silverstone GP',
-      'lapTime': '1:59.204',
-      'laps': '12',
-      'car': 'Porsche 992 GT3',
-      'condition': 'Dry',
-      'temp': '14\u00B0C',
-      'isPb': true,
-    },
-    {
-      'name': 'Sarah Okafor',
-      'handle': '@sarahraces',
-      'circuit': 'Brands Hatch Indy',
-      'lapTime': '59.114',
-      'laps': '8',
-      'car': 'Clio Cup S5',
-      'condition': 'Damp',
-      'temp': '11\u00B0C',
-      'isPb': false,
-    },
-    {
-      'name': 'Tom Bridger',
-      'handle': '@tbridger92',
-      'circuit': 'Snetterton 300',
-      'lapTime': '2:04.881',
-      'laps': '16',
-      'car': 'BMW M2 CS',
-      'condition': 'Dry',
-      'temp': '18\u00B0C',
-      'isPb': true,
-    },
-  ];
+  final FeedItem item;
 
   @override
   Widget build(BuildContext context) {
-    final data = _mockData[index];
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: AppColors.borderLight)),
-      ),
+    return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header row
+          // User row
           Row(
             children: [
-              // Avatar
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: AppColors.purpleLight,
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: Text(
-                    (data['name'] as String).split(' ').map((n) => n[0]).join(),
-                    style: AppTypography.labelMedium.copyWith(
-                      color: AppColors.purple,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
+              AppAvatar(
+                imageUrl: item.avatarUrl,
+                initials: item.displayName.isNotEmpty
+                    ? item.displayName[0].toUpperCase()
+                    : null,
+                size: 36,
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Text(
-                          data['name'] as String,
-                          style: AppTypography.labelLarge,
-                        ),
-                        if (data['isPb'] == true) ...[
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: AppColors.goldLight,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(LucideIcons.crown, size: 10, color: AppColors.gold),
-                                const SizedBox(width: 3),
-                                Text(
-                                  'P1',
-                                  style: AppTypography.labelSmall.copyWith(
-                                    color: AppColors.gold,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 9,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
                     Text(
-                      '${data['handle']} \u00B7 2h ago',
-                      style: AppTypography.bodySmall,
+                      item.displayName,
+                      style: AppTypography.bodyMedium.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
+                    if (item.circuitName != null)
+                      Text(
+                        item.circuitName!,
+                        style: AppTypography.bodySmall.copyWith(
+                          color: AppColors.textTertiary,
+                        ),
+                      ),
                   ],
                 ),
               ),
+              if (item.isPersonalBest == true) const P1Badge(),
             ],
           ),
 
           const SizedBox(height: 12),
 
-          // Circuit + lap time
-          Text(
-            data['circuit'] as String,
-            style: AppTypography.headlineSmall.copyWith(
-              fontSize: 20,
-              letterSpacing: -0.3,
-            ),
-          ),
+          // Lap time + stats
           Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
             children: [
-              Text(
-                data['lapTime'] as String,
-                style: AppTypography.lapTime.copyWith(fontSize: 32),
-              ),
-              const SizedBox(width: 4),
-              Text(
-                'lap',
-                style: AppTypography.bodySmall.copyWith(
-                  color: AppColors.textSecondary,
+              if (item.bestLapMs != null)
+                Text(
+                  FormatUtils.formatLapTime(item.bestLapMs!),
+                  style: AppTypography.lapTime.copyWith(fontSize: 28),
                 ),
-              ),
-              if (data['isPb'] == true) ...[
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: AppColors.purpleLight,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    'PB',
-                    style: AppTypography.labelSmall.copyWith(
-                      color: AppColors.purple,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 10,
-                    ),
-                  ),
-                ),
+              const Spacer(),
+              if (item.lapCount != null)
+                _StatPill(label: '${item.lapCount} laps'),
+              if (item.carMake != null) ...[
+                const SizedBox(width: 6),
+                _StatPill(label: '${item.carMake} ${item.carModel ?? ""}'),
               ],
             ],
           ),
 
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
 
-          // Stats row
+          // Action pills
           Row(
             children: [
-              _StatChip(label: '${data['laps']} laps'),
+              AppPill.outlined(
+                label: 'Sectors',
+                icon: LucideIcons.flag,
+                onTap: () {},
+              ),
               const SizedBox(width: 8),
-              _StatChip(label: data['car'] as String),
+              AppPill.outlined(
+                label: 'Nice',
+                icon: LucideIcons.thumbsUp,
+                onTap: () {},
+              ),
               const SizedBox(width: 8),
-              _StatChip(label: '${data['condition']} \u00B7 ${data['temp']}'),
-            ],
-          ),
-
-          const SizedBox(height: 14),
-
-          // Action buttons
-          Row(
-            children: [
-              _ActionPill(icon: LucideIcons.trophy, label: 'Sectors'),
-              const SizedBox(width: 8),
-              _ActionPill(icon: LucideIcons.thumbsUp, label: 'Nice'),
-              const SizedBox(width: 8),
-              _ActionPill(icon: LucideIcons.messageCircle, label: ''),
+              AppPill.outlined(
+                label: 'Comment',
+                icon: LucideIcons.messageCircle,
+                onTap: () {},
+              ),
             ],
           ),
         ],
@@ -306,53 +238,41 @@ class _FeedItemPlaceholder extends StatelessWidget {
   }
 }
 
-class _StatChip extends StatelessWidget {
+class _StatPill extends StatelessWidget {
+  const _StatPill({required this.label});
+
   final String label;
-
-  const _StatChip({required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      label,
-      style: AppTypography.bodySmall.copyWith(
-        color: AppColors.textSecondary,
-        fontSize: 12,
-      ),
-    );
-  }
-}
-
-class _ActionPill extends StatelessWidget {
-  final IconData icon;
-  final String label;
-
-  const _ActionPill({required this.icon, required this.label});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: AppColors.ghost,
         borderRadius: BorderRadius.circular(100),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: AppColors.textSecondary),
-          if (label.isNotEmpty) ...[
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: AppTypography.bodySmall.copyWith(
-                color: AppColors.textSecondary,
-                fontSize: 12,
-              ),
-            ),
-          ],
-        ],
+      child: Text(
+        label,
+        style: AppTypography.bodySmall.copyWith(
+          color: AppColors.textTertiary,
+          fontSize: 11,
+        ),
       ),
+    );
+  }
+}
+
+class _EmptyTeamsFeed extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return EmptyState(
+      icon: LucideIcons.users,
+      title: 'No teams yet',
+      subtitle: 'Join a team with a team code to see shared sessions.',
+      actionLabel: 'Join Team',
+      onAction: () {
+        // TODO: Show join team dialog
+      },
     );
   }
 }
