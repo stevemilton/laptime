@@ -1,13 +1,20 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
 import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_typography.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/supabase_provider.dart';
 import '../data/car_repository.dart';
 
-/// Form screen for creating or editing a car in the garage.
+/// Form screen for creating or editing a car/kart in the garage.
 class CarFormScreen extends ConsumerStatefulWidget {
   const CarFormScreen({super.key, this.carId});
 
@@ -23,7 +30,14 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
   final _modelController = TextEditingController();
   final _yearController = TextEditingController();
   final _colourController = TextEditingController();
+  final _powerController = TextEditingController();
+  final _weightController = TextEditingController();
+  final _engineCapacityController = TextEditingController();
+  final _modificationsController = TextEditingController();
+  final _tyreSetupController = TextEditingController();
   String? _selectedClass;
+  String? _selectedDrivetrain;
+  String? _imageUrl;
   bool _isLoading = false;
   bool _isEditing = false;
 
@@ -35,7 +49,18 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
     'Sports Prototype',
     'Rally',
     'Drift',
+    'Hillclimb',
+    'Time Attack',
+    'Autocross',
+    'Kart',
     'Other',
+  ];
+
+  static const _drivetrains = [
+    'FWD',
+    'RWD',
+    'AWD',
+    '4WD',
   ];
 
   @override
@@ -57,7 +82,14 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
         _modelController.text = car.model;
         _yearController.text = car.year?.toString() ?? '';
         _colourController.text = car.colour ?? '';
+        _powerController.text = car.powerHp?.toString() ?? '';
+        _weightController.text = car.weightKg?.toString() ?? '';
+        _engineCapacityController.text = car.engineCapacity ?? '';
+        _modificationsController.text = car.modifications ?? '';
+        _tyreSetupController.text = car.tyreSetup ?? '';
         _selectedClass = car.carClass;
+        _selectedDrivetrain = car.drivetrain;
+        _imageUrl = car.imageUrl;
       });
     }
   }
@@ -68,18 +100,31 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
     _modelController.dispose();
     _yearController.dispose();
     _colourController.dispose();
+    _powerController.dispose();
+    _weightController.dispose();
+    _engineCapacityController.dispose();
+    _modificationsController.dispose();
+    _tyreSetupController.dispose();
     super.dispose();
   }
+
+  bool get _isKart => _selectedClass == 'Kart';
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.white,
       appBar: AppBar(
-        title: Text(_isEditing ? 'Edit Car' : 'Add Car'),
+        title: Text(_isEditing ? 'Edit Vehicle' : 'Add Vehicle'),
         leading: IconButton(
           icon: const Icon(LucideIcons.arrowLeft),
-          onPressed: () => context.pop(),
+          onPressed: () {
+            if (Navigator.of(context).canPop()) {
+              context.pop();
+            } else {
+              context.go('/profile');
+            }
+          },
         ),
         actions: [
           if (_isEditing)
@@ -94,12 +139,38 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: [
+            // ── Vehicle Photo ──
+            _buildPhotoSection(),
+            const SizedBox(height: 24),
+
+            // ── Basic Info ──
+            _buildSectionLabel('BASIC INFO'),
+            const SizedBox(height: 12),
+
+            // Class (moved to top so kart logic works)
+            DropdownButtonFormField<String>(
+              initialValue: _selectedClass,
+              decoration: const InputDecoration(
+                labelText: 'Class',
+                prefixIcon: Icon(LucideIcons.flag, size: 18),
+              ),
+              items: _carClasses
+                  .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                  .toList(),
+              onChanged: (v) => setState(() => _selectedClass = v),
+            ),
+            const SizedBox(height: 16),
+
             // Make
             TextFormField(
               controller: _makeController,
-              decoration: const InputDecoration(
-                labelText: 'Make',
-                hintText: 'e.g. Porsche',
+              decoration: InputDecoration(
+                labelText: _isKart ? 'Chassis Make' : 'Make',
+                hintText: _isKart ? 'e.g. Tony Kart, CRG' : 'e.g. Porsche',
+                prefixIcon: Icon(
+                  _isKart ? LucideIcons.gauge : LucideIcons.car,
+                  size: 18,
+                ),
               ),
               textCapitalization: TextCapitalization.words,
               textInputAction: TextInputAction.next,
@@ -111,9 +182,10 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
             // Model
             TextFormField(
               controller: _modelController,
-              decoration: const InputDecoration(
-                labelText: 'Model',
-                hintText: 'e.g. 911 GT3',
+              decoration: InputDecoration(
+                labelText: _isKart ? 'Chassis Model' : 'Model',
+                hintText: _isKart ? 'e.g. Racer 401 RR' : 'e.g. 911 GT3',
+                prefixIcon: const Icon(LucideIcons.tag, size: 18),
               ),
               textCapitalization: TextCapitalization.words,
               textInputAction: TextInputAction.next,
@@ -128,41 +200,131 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
               decoration: const InputDecoration(
                 labelText: 'Year',
                 hintText: 'e.g. 2024',
+                prefixIcon: Icon(LucideIcons.calendar, size: 18),
               ),
               keyboardType: TextInputType.number,
               textInputAction: TextInputAction.next,
             ),
             const SizedBox(height: 16),
 
-            // Class
-            DropdownButtonFormField<String>(
-              initialValue: _selectedClass,
-              decoration: const InputDecoration(
-                labelText: 'Class',
-              ),
-              items: _carClasses
-                  .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                  .toList(),
-              onChanged: (v) => setState(() => _selectedClass = v),
-            ),
-            const SizedBox(height: 16),
-
             // Colour
             TextFormField(
               controller: _colourController,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Colour',
-                hintText: 'e.g. Guards Red',
+                hintText: _isKart ? 'e.g. Red / White' : 'e.g. Guards Red',
+                prefixIcon: const Icon(LucideIcons.palette, size: 18),
               ),
               textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.next,
+            ),
+
+            const SizedBox(height: 28),
+
+            // ── Performance Specs ──
+            _buildSectionLabel('PERFORMANCE'),
+            const SizedBox(height: 12),
+
+            // Engine capacity
+            TextFormField(
+              controller: _engineCapacityController,
+              decoration: InputDecoration(
+                labelText: _isKart ? 'Engine' : 'Engine',
+                hintText: _isKart
+                    ? 'e.g. Rotax 125, IAME X30'
+                    : 'e.g. 4.0L flat-six',
+                prefixIcon: const Icon(LucideIcons.zap, size: 18),
+              ),
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.next,
+            ),
+            const SizedBox(height: 16),
+
+            // Power
+            TextFormField(
+              controller: _powerController,
+              decoration: InputDecoration(
+                labelText: 'Power (hp)',
+                hintText: _isKart ? 'e.g. 34' : 'e.g. 502',
+                prefixIcon: const Icon(LucideIcons.activity, size: 18),
+              ),
+              keyboardType: TextInputType.number,
+              textInputAction: TextInputAction.next,
+            ),
+            const SizedBox(height: 16),
+
+            // Weight
+            TextFormField(
+              controller: _weightController,
+              decoration: InputDecoration(
+                labelText: _isKart ? 'Total Weight (kg)' : 'Kerb Weight (kg)',
+                hintText: _isKart
+                    ? 'e.g. 160 (kart + driver)'
+                    : 'e.g. 1435',
+                prefixIcon: const Icon(LucideIcons.scale, size: 18),
+              ),
+              keyboardType: TextInputType.number,
+              textInputAction: TextInputAction.next,
+            ),
+            const SizedBox(height: 16),
+
+            // Drivetrain (hidden for karts - always RWD)
+            if (!_isKart) ...[
+              DropdownButtonFormField<String>(
+                initialValue: _selectedDrivetrain,
+                decoration: const InputDecoration(
+                  labelText: 'Drivetrain',
+                  prefixIcon: Icon(LucideIcons.settings2, size: 18),
+                ),
+                items: _drivetrains
+                    .map((d) => DropdownMenuItem(value: d, child: Text(d)))
+                    .toList(),
+                onChanged: (v) => setState(() => _selectedDrivetrain = v),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            const SizedBox(height: 12),
+
+            // ── Setup ──
+            _buildSectionLabel('SETUP'),
+            const SizedBox(height: 12),
+
+            // Tyre setup
+            TextFormField(
+              controller: _tyreSetupController,
+              decoration: InputDecoration(
+                labelText: _isKart ? 'Tyre Setup' : 'Default Tyres',
+                hintText: _isKart
+                    ? 'e.g. MG Red, Mojo D5'
+                    : 'e.g. Michelin Pilot Sport 4S',
+                prefixIcon: const Icon(LucideIcons.circle, size: 18),
+              ),
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.next,
+            ),
+            const SizedBox(height: 16),
+
+            // Modifications
+            TextFormField(
+              controller: _modificationsController,
+              decoration: InputDecoration(
+                labelText: _isKart ? 'Setup Notes' : 'Modifications',
+                hintText: _isKart
+                    ? 'e.g. Sprocket 11/80, seat position low'
+                    : 'e.g. Coilovers, roll cage, bucket seats',
+                prefixIcon: const Icon(LucideIcons.wrench, size: 18),
+              ),
+              textCapitalization: TextCapitalization.sentences,
+              maxLines: 3,
               textInputAction: TextInputAction.done,
             ),
             const SizedBox(height: 32),
 
             // Save button
-            FilledButton(
+            FilledButton.icon(
               onPressed: _isLoading ? null : _save,
-              child: _isLoading
+              icon: _isLoading
                   ? const SizedBox(
                       width: 20,
                       height: 20,
@@ -171,12 +333,217 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
                         color: AppColors.white,
                       ),
                     )
-                  : Text(_isEditing ? 'Save Changes' : 'Add Car'),
+                  : const Icon(LucideIcons.check, size: 18),
+              label: Text(_isEditing ? 'Save Changes' : 'Add Vehicle'),
             ),
+            const SizedBox(height: 32),
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildSectionLabel(String text) {
+    return Text(
+      text,
+      style: AppTypography.labelSmall.copyWith(
+        color: AppColors.textTertiary,
+        letterSpacing: 1.2,
+        fontWeight: FontWeight.w600,
+      ),
+    );
+  }
+
+  Widget _buildPhotoSection() {
+    final hasImage = _imageUrl != null && _imageUrl!.isNotEmpty;
+
+    return GestureDetector(
+      onTap: _pickImage,
+      child: Container(
+        height: 200,
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: AppColors.ghost,
+          borderRadius: BorderRadius.circular(AppRadii.lg),
+          border: Border.all(
+            color: hasImage ? Colors.transparent : AppColors.border,
+            width: hasImage ? 0 : 1.5,
+            strokeAlign: BorderSide.strokeAlignInside,
+          ),
+          image: hasImage
+              ? DecorationImage(
+                  image: _imageUrl!.startsWith('http')
+                      ? NetworkImage(_imageUrl!) as ImageProvider
+                      : FileImage(File(_imageUrl!)),
+                  fit: BoxFit.cover,
+                )
+              : null,
+        ),
+        child: hasImage
+            ? Stack(
+                children: [
+                  // Dark overlay gradient at bottom
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      height: 60,
+                      decoration: BoxDecoration(
+                        borderRadius: const BorderRadius.only(
+                          bottomLeft: Radius.circular(AppRadii.lg),
+                          bottomRight: Radius.circular(AppRadii.lg),
+                        ),
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.transparent,
+                            Colors.black.withValues(alpha: 0.5),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    right: 12,
+                    bottom: 12,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppColors.white.withValues(alpha: 0.9),
+                        borderRadius: BorderRadius.circular(AppRadii.sm),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(LucideIcons.camera,
+                              size: 14, color: AppColors.textSecondary),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Change Photo',
+                            style: AppTypography.labelSmall.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            : Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 56,
+                    height: 56,
+                    decoration: const BoxDecoration(
+                      color: AppColors.purplePale,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      LucideIcons.camera,
+                      size: 24,
+                      color: AppColors.purple,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Add Vehicle Photo',
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Tap to take a photo or choose from gallery',
+                    style: AppTypography.bodySmall.copyWith(
+                      color: AppColors.textTertiary,
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+
+  Future<void> _pickImage() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 36,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: AppColors.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              ListTile(
+                leading:
+                    const Icon(LucideIcons.camera, color: AppColors.purple),
+                title: const Text('Take Photo'),
+                onTap: () => Navigator.pop(ctx, ImageSource.camera),
+              ),
+              ListTile(
+                leading:
+                    const Icon(LucideIcons.image, color: AppColors.purple),
+                title: const Text('Choose from Gallery'),
+                onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+              ),
+              if (_imageUrl != null) ...[
+                const Divider(),
+                ListTile(
+                  leading: const Icon(LucideIcons.trash2, color: AppColors.red),
+                  title: const Text('Remove Photo',
+                      style: TextStyle(color: AppColors.red)),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    setState(() => _imageUrl = null);
+                  },
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (source == null) return;
+
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: source,
+      maxWidth: 1200,
+      maxHeight: 800,
+      imageQuality: 85,
+    );
+
+    if (picked != null) {
+      // Copy to app documents directory for persistence
+      final appDir = await getApplicationDocumentsDirectory();
+      final carsDir = Directory(p.join(appDir.path, 'car_images'));
+      if (!await carsDir.exists()) {
+        await carsDir.create(recursive: true);
+      }
+      final ext = p.extension(picked.path);
+      final fileName = 'car_${DateTime.now().millisecondsSinceEpoch}$ext';
+      final savedPath = p.join(carsDir.path, fileName);
+      await File(picked.path).copy(savedPath);
+
+      if (mounted) {
+        setState(() => _imageUrl = savedPath);
+      }
+    }
   }
 
   Future<void> _save() async {
@@ -188,9 +555,20 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
       final db = ref.read(databaseProvider);
       final repo = CarRepository(db);
       final year = int.tryParse(_yearController.text);
+      final powerHp = int.tryParse(_powerController.text);
+      final weightKg = int.tryParse(_weightController.text);
       final colour = _colourController.text.trim().isEmpty
           ? null
           : _colourController.text.trim();
+      final engineCapacity = _engineCapacityController.text.trim().isEmpty
+          ? null
+          : _engineCapacityController.text.trim();
+      final modifications = _modificationsController.text.trim().isEmpty
+          ? null
+          : _modificationsController.text.trim();
+      final tyreSetup = _tyreSetupController.text.trim().isEmpty
+          ? null
+          : _tyreSetupController.text.trim();
 
       if (_isEditing) {
         await repo.updateCar(
@@ -200,6 +578,13 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
           year: year,
           carClass: _selectedClass,
           colour: colour,
+          imageUrl: _imageUrl,
+          powerHp: powerHp,
+          weightKg: weightKg,
+          drivetrain: _isKart ? 'RWD' : _selectedDrivetrain,
+          engineCapacity: engineCapacity,
+          modifications: modifications,
+          tyreSetup: tyreSetup,
         );
       } else {
         final user = ref.read(currentUserProvider);
@@ -212,10 +597,23 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
           year: year,
           carClass: _selectedClass,
           colour: colour,
+          imageUrl: _imageUrl,
+          powerHp: powerHp,
+          weightKg: weightKg,
+          drivetrain: _isKart ? 'RWD' : _selectedDrivetrain,
+          engineCapacity: engineCapacity,
+          modifications: modifications,
+          tyreSetup: tyreSetup,
         );
       }
 
-      if (mounted) context.pop();
+      if (mounted) {
+        if (Navigator.of(context).canPop()) {
+          context.pop();
+        } else {
+          context.go('/profile');
+        }
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -234,8 +632,9 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Car'),
-        content: const Text('Are you sure you want to remove this car from your garage?'),
+        title: const Text('Delete Vehicle'),
+        content: const Text(
+            'Are you sure you want to remove this vehicle from your garage?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -256,7 +655,13 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
       final db = ref.read(databaseProvider);
       final repo = CarRepository(db);
       await repo.deleteCar(widget.carId!);
-      if (mounted) context.pop();
+      if (mounted) {
+        if (Navigator.of(context).canPop()) {
+          context.pop();
+        } else {
+          context.go('/profile');
+        }
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

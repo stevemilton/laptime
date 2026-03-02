@@ -40,6 +40,13 @@ class CarRepository {
     int? year,
     String? carClass,
     String? colour,
+    String? imageUrl,
+    int? powerHp,
+    int? weightKg,
+    String? drivetrain,
+    String? engineCapacity,
+    String? modifications,
+    String? tyreSetup,
   }) async {
     final id = _uuid.v4();
     final now = DateTime.now();
@@ -53,6 +60,13 @@ class CarRepository {
         year: Value(year),
         carClass: Value(carClass),
         colour: Value(colour),
+        imageUrl: Value(imageUrl),
+        powerHp: Value(powerHp),
+        weightKg: Value(weightKg),
+        drivetrain: Value(drivetrain),
+        engineCapacity: Value(engineCapacity),
+        modifications: Value(modifications),
+        tyreSetup: Value(tyreSetup),
         createdAt: Value(now),
       ),
     );
@@ -69,6 +83,13 @@ class CarRepository {
         if (year != null) 'year': year,
         if (carClass != null) 'class': carClass,
         if (colour != null) 'colour': colour,
+        if (imageUrl != null) 'image_url': imageUrl,
+        if (powerHp != null) 'power_hp': powerHp,
+        if (weightKg != null) 'weight_kg': weightKg,
+        if (drivetrain != null) 'drivetrain': drivetrain,
+        if (engineCapacity != null) 'engine_capacity': engineCapacity,
+        if (modifications != null) 'modifications': modifications,
+        if (tyreSetup != null) 'tyre_setup': tyreSetup,
         'created_at': now.toIso8601String(),
       }),
     );
@@ -84,6 +105,13 @@ class CarRepository {
     int? year,
     String? carClass,
     String? colour,
+    String? imageUrl,
+    int? powerHp,
+    int? weightKg,
+    String? drivetrain,
+    String? engineCapacity,
+    String? modifications,
+    String? tyreSetup,
   }) async {
     await (_db.update(_db.localCars)..where((t) => t.id.equals(carId))).write(
       LocalCarsCompanion(
@@ -92,6 +120,17 @@ class CarRepository {
         year: year != null ? Value(year) : const Value.absent(),
         carClass: carClass != null ? Value(carClass) : const Value.absent(),
         colour: colour != null ? Value(colour) : const Value.absent(),
+        imageUrl: imageUrl != null ? Value(imageUrl) : const Value.absent(),
+        powerHp: powerHp != null ? Value(powerHp) : const Value.absent(),
+        weightKg: weightKg != null ? Value(weightKg) : const Value.absent(),
+        drivetrain:
+            drivetrain != null ? Value(drivetrain) : const Value.absent(),
+        engineCapacity: engineCapacity != null
+            ? Value(engineCapacity)
+            : const Value.absent(),
+        modifications:
+            modifications != null ? Value(modifications) : const Value.absent(),
+        tyreSetup: tyreSetup != null ? Value(tyreSetup) : const Value.absent(),
       ),
     );
 
@@ -101,6 +140,13 @@ class CarRepository {
     if (year != null) payload['year'] = year;
     if (carClass != null) payload['class'] = carClass;
     if (colour != null) payload['colour'] = colour;
+    if (imageUrl != null) payload['image_url'] = imageUrl;
+    if (powerHp != null) payload['power_hp'] = powerHp;
+    if (weightKg != null) payload['weight_kg'] = weightKg;
+    if (drivetrain != null) payload['drivetrain'] = drivetrain;
+    if (engineCapacity != null) payload['engine_capacity'] = engineCapacity;
+    if (modifications != null) payload['modifications'] = modifications;
+    if (tyreSetup != null) payload['tyre_setup'] = tyreSetup;
 
     await _db.enqueueSync(
       targetTable: 'cars',

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -96,10 +98,7 @@ class ProfileScreen extends ConsumerWidget {
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Row(
               children: [
-                AppAvatar.xl(
-                  imageUrl: profileAsync.value?.avatarUrl,
-                  initials: _getInitials(profileAsync.value?.displayName),
-                ),
+                _buildProfileAvatar(profileAsync.value),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Column(
@@ -239,7 +238,7 @@ class ProfileScreen extends ConsumerWidget {
               }
 
               return SizedBox(
-                height: 100,
+                height: 120,
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -319,6 +318,34 @@ class ProfileScreen extends ConsumerWidget {
           const SizedBox(height: 32),
         ],
       ),
+    );
+  }
+
+  Widget _buildProfileAvatar(LocalProfile? profile) {
+    final avatarUrl = profile?.avatarUrl;
+    final initials = _getInitials(profile?.displayName);
+
+    // If the avatar is a local file path, use FileImage
+    if (avatarUrl != null &&
+        avatarUrl.isNotEmpty &&
+        !avatarUrl.startsWith('http')) {
+      return Container(
+        width: 80,
+        height: 80,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: AppColors.purpleLight,
+          image: DecorationImage(
+            image: FileImage(File(avatarUrl)),
+            fit: BoxFit.cover,
+          ),
+        ),
+      );
+    }
+
+    return AppAvatar.xl(
+      imageUrl: avatarUrl,
+      initials: initials,
     );
   }
 
@@ -420,11 +447,14 @@ class _CarCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasImage = car.imageUrl != null && car.imageUrl!.isNotEmpty;
+    final isKart = car.carClass == 'Kart';
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 160,
-        padding: const EdgeInsets.all(12),
+        width: 180,
+        clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           color: AppColors.white,
           borderRadius: BorderRadius.circular(AppRadii.md),
@@ -434,58 +464,90 @@ class _CarCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                const Icon(LucideIcons.car, size: 16, color: AppColors.purple),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    car.make,
-                    style: AppTypography.bodySmall.copyWith(
-                      color: AppColors.textTertiary,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
+            // Photo or icon placeholder
+            if (hasImage)
+              SizedBox(
+                height: 56,
+                width: double.infinity,
+                child: Image(
+                  image: car.imageUrl!.startsWith('http')
+                      ? NetworkImage(car.imageUrl!) as ImageProvider
+                      : FileImage(File(car.imageUrl!)),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, e, s) => _buildIconPlaceholder(isKart),
                 ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              car.model,
-              style: AppTypography.headlineSmall.copyWith(fontSize: 16),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const Spacer(),
-            Row(
-              children: [
-                if (car.year != null)
-                  Text(
-                    car.year.toString(),
-                    style: AppTypography.bodySmall.copyWith(
-                      color: AppColors.textTertiary,
-                    ),
-                  ),
-                if (car.carClass != null) ...[
-                  if (car.year != null)
+              )
+            else
+              _buildIconPlaceholder(isKart),
+            // Info
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
-                      ' / ',
+                      '${car.make} ${car.model}',
                       style: AppTypography.bodySmall.copyWith(
-                        color: AppColors.textTertiary,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  Text(
-                    car.carClass!,
-                    style: AppTypography.bodySmall.copyWith(
-                      color: AppColors.purple,
-                      fontWeight: FontWeight.w600,
+                    const Spacer(),
+                    Row(
+                      children: [
+                        if (car.carClass != null)
+                          Flexible(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 5, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: AppColors.purplePale,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                car.carClass!,
+                                style: AppTypography.labelSmall.copyWith(
+                                  color: AppColors.purple,
+                                  fontSize: 10,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                        if (car.powerHp != null) ...[
+                          const SizedBox(width: 4),
+                          Text(
+                            '${car.powerHp}hp',
+                            style: AppTypography.labelSmall.copyWith(
+                              color: AppColors.textTertiary,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
-                  ),
-                ],
-              ],
+                  ],
+                ),
+              ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildIconPlaceholder(bool isKart) {
+    return Container(
+      height: 56,
+      width: double.infinity,
+      color: AppColors.purplePale,
+      child: Icon(
+        isKart ? LucideIcons.gauge : LucideIcons.car,
+        size: 24,
+        color: AppColors.purple.withValues(alpha: 0.5),
       ),
     );
   }

@@ -1,8 +1,14 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as path;
 import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_typography.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/supabase_provider.dart';
 import '../../../core/widgets/app_avatar.dart';
@@ -20,6 +26,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   final _nameController = TextEditingController();
   final _handleController = TextEditingController();
   bool _isLoading = false;
+  String? _avatarUrl;
 
   @override
   void initState() {
@@ -40,6 +47,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       setState(() {
         _nameController.text = profile.displayName;
         _handleController.text = profile.handle ?? '';
+        _avatarUrl = profile.avatarUrl;
       });
     }
   }
@@ -65,33 +73,45 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          // Avatar
+          // Avatar with working photo picker
           Center(
-            child: Stack(
-              children: [
-                AppAvatar.xl(),
-                Positioned(
-                  right: 0,
-                  bottom: 0,
-                  child: Container(
-                    width: 28,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      color: AppColors.purple,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: AppColors.white, width: 2),
-                    ),
-                    child: const Icon(
-                      LucideIcons.camera,
-                      size: 14,
-                      color: AppColors.white,
+            child: GestureDetector(
+              onTap: _pickAvatar,
+              child: Stack(
+                children: [
+                  _buildAvatar(),
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: AppColors.purple,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: AppColors.white, width: 2),
+                      ),
+                      child: const Icon(
+                        LucideIcons.camera,
+                        size: 14,
+                        color: AppColors.white,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: 8),
+          Center(
+            child: Text(
+              'Tap to change photo',
+              style: AppTypography.bodySmall.copyWith(
+                color: AppColors.textTertiary,
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
 
           // Display name
           TextFormField(
@@ -137,6 +157,116 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     );
   }
 
+  Widget _buildAvatar() {
+    if (_avatarUrl != null && _avatarUrl!.isNotEmpty) {
+      final isLocal = !_avatarUrl!.startsWith('http');
+      return Container(
+        width: 80,
+        height: 80,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: AppColors.purpleLight,
+          image: DecorationImage(
+            image: isLocal
+                ? FileImage(File(_avatarUrl!)) as ImageProvider
+                : NetworkImage(_avatarUrl!),
+            fit: BoxFit.cover,
+          ),
+        ),
+      );
+    }
+
+    // Fallback with initials
+    final name = _nameController.text;
+    String? initials;
+    if (name.isNotEmpty) {
+      final parts = name.split(' ');
+      if (parts.length >= 2) {
+        initials = '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+      } else {
+        initials = name[0].toUpperCase();
+      }
+    }
+
+    return AppAvatar.xl(initials: initials);
+  }
+
+  Future<void> _pickAvatar() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 36,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: AppColors.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              ListTile(
+                leading:
+                    const Icon(LucideIcons.camera, color: AppColors.purple),
+                title: const Text('Take Photo'),
+                onTap: () => Navigator.pop(ctx, ImageSource.camera),
+              ),
+              ListTile(
+                leading:
+                    const Icon(LucideIcons.image, color: AppColors.purple),
+                title: const Text('Choose from Gallery'),
+                onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+              ),
+              if (_avatarUrl != null) ...[
+                const Divider(),
+                ListTile(
+                  leading: const Icon(LucideIcons.trash2, color: AppColors.red),
+                  title: const Text('Remove Photo',
+                      style: TextStyle(color: AppColors.red)),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    setState(() => _avatarUrl = null);
+                  },
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (source == null) return;
+
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: source,
+      maxWidth: 512,
+      maxHeight: 512,
+      imageQuality: 85,
+    );
+
+    if (picked != null) {
+      // Copy to app documents directory for persistence
+      final appDir = await getApplicationDocumentsDirectory();
+      final avatarsDir = Directory(path.join(appDir.path, 'avatars'));
+      if (!await avatarsDir.exists()) {
+        await avatarsDir.create(recursive: true);
+      }
+      final ext = path.extension(picked.path);
+      final fileName = 'avatar_${DateTime.now().millisecondsSinceEpoch}$ext';
+      final savedPath = path.join(avatarsDir.path, fileName);
+      await File(picked.path).copy(savedPath);
+
+      if (mounted) {
+        setState(() => _avatarUrl = savedPath);
+      }
+    }
+  }
+
   Future<void> _save() async {
     final user = ref.read(currentUserProvider);
     if (user == null) return;
@@ -154,6 +284,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         handle: _handleController.text.trim().isEmpty
             ? null
             : _handleController.text.trim(),
+        avatarUrl: _avatarUrl,
       );
 
       if (mounted) context.pop();

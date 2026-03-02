@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../../../core/theme/app_colors.dart';
@@ -184,7 +185,17 @@ class _DisclaimerScreenState extends ConsumerState<DisclaimerScreen> {
 
   Future<void> _onAccept() async {
     final user = ref.read(currentUserProvider);
-    if (user == null) return;
+    if (user == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Not signed in. Please restart the app.'),
+            backgroundColor: AppColors.red,
+          ),
+        );
+      }
+      return;
+    }
 
     setState(() => _isSubmitting = true);
 
@@ -202,6 +213,11 @@ class _DisclaimerScreenState extends ConsumerState<DisclaimerScreen> {
 
       // Invalidate the provider so router re-evaluates
       ref.invalidate(hasAcceptedDisclaimerProvider);
+
+      // Navigate directly as a fallback in case the redirect doesn't fire
+      if (mounted) {
+        GoRouter.of(context).go('/record');
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

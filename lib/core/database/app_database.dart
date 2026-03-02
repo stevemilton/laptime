@@ -42,7 +42,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration {
@@ -51,7 +51,16 @@ class AppDatabase extends _$AppDatabase {
         await m.createAll();
       },
       onUpgrade: (m, from, to) async {
-        // Handle future migrations here
+        if (from < 2) {
+          // v2: Add new car fields for enthusiast features
+          await m.addColumn(localCars, localCars.imageUrl);
+          await m.addColumn(localCars, localCars.powerHp);
+          await m.addColumn(localCars, localCars.weightKg);
+          await m.addColumn(localCars, localCars.drivetrain);
+          await m.addColumn(localCars, localCars.engineCapacity);
+          await m.addColumn(localCars, localCars.modifications);
+          await m.addColumn(localCars, localCars.tyreSetup);
+        }
       },
     );
   }

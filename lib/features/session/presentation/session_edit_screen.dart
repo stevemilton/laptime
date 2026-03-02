@@ -130,7 +130,11 @@ class _SessionEditScreenState extends ConsumerState<SessionEditScreen> {
             backgroundColor: AppColors.green,
           ),
         );
-        context.pop();
+        if (Navigator.of(context).canPop()) {
+          context.pop();
+        } else {
+          context.go('/record');
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -153,7 +157,13 @@ class _SessionEditScreenState extends ConsumerState<SessionEditScreen> {
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(LucideIcons.arrowLeft),
-          onPressed: () => context.pop(),
+          onPressed: () {
+            if (Navigator.of(context).canPop()) {
+              context.pop();
+            } else {
+              context.go('/record');
+            }
+          },
         ),
         title: Text(
           'Edit Session',

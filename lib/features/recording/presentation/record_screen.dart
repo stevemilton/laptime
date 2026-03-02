@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -53,10 +55,13 @@ class _RecordScreenState extends ConsumerState<RecordScreen>
   late Animation<double> _pulseAnimation;
   final _locationService = LocationService();
   bool _gpsReady = false;
+  double? _gpsAccuracy; // Real GPS accuracy in meters
+  StreamSubscription<Position>? _liveGpsSub; // Continuous GPS for live accuracy
 
   // Live weather
   WeatherData? _weather;
   bool _weatherLoading = true;
+  String? _weatherError; // User-visible weather error
 
   @override
   void initState() {
@@ -77,13 +82,37 @@ class _RecordScreenState extends ConsumerState<RecordScreen>
   Future<void> _checkGps() async {
     final ready = await _locationService.checkPermissions();
     if (mounted) setState(() => _gpsReady = ready);
+
+    // Start continuous GPS stream to show live accuracy
+    if (ready) {
+      _liveGpsSub = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 0,
+        ),
+      ).listen(
+        (position) {
+          if (mounted) {
+            setState(() => _gpsAccuracy = position.accuracy);
+          }
+        },
+        onError: (_) {
+          // Silently fail - accuracy will stay at last known value
+        },
+      );
+    }
   }
 
   Future<void> _fetchWeather() async {
     try {
       final hasPerms = await _locationService.checkPermissions();
       if (!hasPerms) {
-        if (mounted) setState(() => _weatherLoading = false);
+        if (mounted) {
+          setState(() {
+            _weatherLoading = false;
+            _weatherError = 'Location permission needed';
+          });
+        }
         return;
       }
 
@@ -94,24 +123,31 @@ class _RecordScreenState extends ConsumerState<RecordScreen>
         ),
       );
 
-      final weather = await WeatherService().fetchWeather(
+      final result = await WeatherService().fetchWeatherWithResult(
         latitude: position.latitude,
         longitude: position.longitude,
       );
 
       if (mounted) {
         setState(() {
-          _weather = weather;
+          _weather = result.data;
+          _weatherError = result.error;
           _weatherLoading = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _weatherLoading = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _weatherLoading = false;
+          _weatherError = 'Could not fetch weather';
+        });
+      }
     }
   }
 
   @override
   void dispose() {
+    _liveGpsSub?.cancel();
     _pulseController.dispose();
     super.dispose();
   }
@@ -141,7 +177,7 @@ class _RecordScreenState extends ConsumerState<RecordScreen>
                     const SizedBox(height: 2),
                     GpsIndicator(
                       isActive: _gpsReady,
-                      accuracy: _gpsReady ? 5.0 : null,
+                      accuracy: _gpsAccuracy,
                     ),
                   ],
                 ),
@@ -250,9 +286,10 @@ class _RecordScreenState extends ConsumerState<RecordScreen>
 
     final w = _weather;
     if (w == null) {
-      return const WeatherStrip(
+      // Show error hint if available
+      return WeatherStrip(
         temperature: '--',
-        trackCondition: '--',
+        trackCondition: _weatherError ?? '--',
         windSpeed: '--',
         pressure: '--',
       );
@@ -393,6 +430,10 @@ class _RecordScreenState extends ConsumerState<RecordScreen>
         return;
       }
     }
+
+    // Stop the pre-recording GPS stream before starting recording
+    await _liveGpsSub?.cancel();
+    _liveGpsSub = null;
 
     // Start recording
     final sessionId = await ref
