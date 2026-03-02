@@ -1,7 +1,7 @@
 name: laptime
 description: "Strava for track days. Record GPS traces, phone telemetry, and weather at amateur motorsport events."
 publish_to: 'none'
-version: 0.1.0+2
+version: 0.1.0+3
 
 environment:
   sdk: ^3.11.0
