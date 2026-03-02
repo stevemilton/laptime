@@ -1,6 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/supabase_provider.dart';
+import '../../profile/data/profile_repository.dart';
 import '../data/auth_repository.dart';
 
 /// Provides the AuthRepository instance.
@@ -40,16 +43,45 @@ class AuthController extends StateNotifier<AsyncValue<void>> {
 
   AuthRepository get _repo => _ref.read(authRepositoryProvider);
 
+  /// Ensures a local profile row exists in Drift after sign-in.
+  Future<void> _ensureLocalProfile() async {
+    try {
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user == null) return;
+
+      final db = _ref.read(databaseProvider);
+      final client = _ref.read(supabaseClientProvider);
+      final repo = ProfileRepository(db, client);
+
+      // Derive a display name from user metadata or email
+      final meta = user.userMetadata;
+      final name = meta?['full_name'] as String? ??
+          meta?['name'] as String? ??
+          user.email?.split('@').first ??
+          'Driver';
+
+      await repo.ensureLocalProfile(userId: user.id, displayName: name);
+    } catch (e) {
+      debugPrint('Failed to ensure local profile: $e');
+    }
+  }
+
   /// Sign in with Apple.
   Future<void> signInWithApple() async {
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() => _repo.signInWithApple());
+    state = await AsyncValue.guard(() async {
+      await _repo.signInWithApple();
+      await _ensureLocalProfile();
+    });
   }
 
   /// Sign in with Google.
   Future<void> signInWithGoogle() async {
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() => _repo.signInWithGoogle());
+    state = await AsyncValue.guard(() async {
+      await _repo.signInWithGoogle();
+      await _ensureLocalProfile();
+    });
   }
 
   /// Sign in with email/password.
@@ -58,9 +90,10 @@ class AuthController extends StateNotifier<AsyncValue<void>> {
     required String password,
   }) async {
     state = const AsyncLoading();
-    state = await AsyncValue.guard(
-      () => _repo.signInWithEmail(email: email, password: password),
-    );
+    state = await AsyncValue.guard(() async {
+      await _repo.signInWithEmail(email: email, password: password);
+      await _ensureLocalProfile();
+    });
   }
 
   /// Sign up with email/password.
@@ -70,13 +103,14 @@ class AuthController extends StateNotifier<AsyncValue<void>> {
     String? displayName,
   }) async {
     state = const AsyncLoading();
-    state = await AsyncValue.guard(
-      () => _repo.signUpWithEmail(
+    state = await AsyncValue.guard(() async {
+      await _repo.signUpWithEmail(
         email: email,
         password: password,
         displayName: displayName,
-      ),
-    );
+      );
+      await _ensureLocalProfile();
+    });
   }
 
   /// Send password reset email.

@@ -588,7 +588,17 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
         );
       } else {
         final user = ref.read(currentUserProvider);
-        if (user == null) return;
+        if (user == null) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Not signed in. Please restart the app.'),
+                backgroundColor: AppColors.red,
+              ),
+            );
+          }
+          return;
+        }
 
         await repo.createCar(
           userId: user.id,

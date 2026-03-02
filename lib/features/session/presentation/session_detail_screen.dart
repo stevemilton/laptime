@@ -171,9 +171,9 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Circuit name
+          // Circuit name (prefer circuitName field, then circuit table, then fallback)
           Text(
-            _circuit?.name ?? 'Unknown Circuit',
+            session.circuitName ?? _circuit?.name ?? 'Unknown Circuit',
             style: AppTypography.headlineLarge,
           ),
           const SizedBox(height: 6),
@@ -219,26 +219,42 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
 
   Widget _buildWeatherStrip(String weatherJson) {
     try {
-      final data = jsonDecode(weatherJson) as Map<String, dynamic>;
-      final temp = data['temp'] is num
-          ? FormatUtils.formatTemp((data['temp'] as num).toDouble())
-          : null;
-      final windSpeed = data['wind_speed'] is num
-          ? FormatUtils.formatWindSpeed(
-              (data['wind_speed'] as num).toDouble())
-          : null;
-      final pressure = data['pressure'] is num
-          ? '${(data['pressure'] as num).round()} hPa'
-          : null;
-      final humidity = data['humidity'] is num
-          ? '${(data['humidity'] as num).round()}%'
-          : null;
+      final raw = jsonDecode(weatherJson) as Map<String, dynamic>;
+
+      // Normalize: support flat format (new) and raw API formats (old)
+      double? temp;
+      double? wind;
+      double? press;
+      int? humid;
+
+      if (raw.containsKey('temp') && raw['temp'] is num) {
+        // Flat / normalized format
+        temp = (raw['temp'] as num).toDouble();
+        wind = (raw['wind_speed'] as num?)?.toDouble();
+        press = (raw['pressure'] as num?)?.toDouble();
+        humid = (raw['humidity'] as num?)?.toInt();
+      } else if (raw.containsKey('current')) {
+        // One Call 3.0 raw format
+        final c = raw['current'] as Map<String, dynamic>? ?? {};
+        temp = (c['temp'] as num?)?.toDouble();
+        wind = (c['wind_speed'] as num?)?.toDouble();
+        press = (c['pressure'] as num?)?.toDouble();
+        humid = (c['humidity'] as num?)?.toInt();
+      } else if (raw.containsKey('main')) {
+        // Current Weather 2.5 raw format
+        final m = raw['main'] as Map<String, dynamic>? ?? {};
+        final w = raw['wind'] as Map<String, dynamic>? ?? {};
+        temp = (m['temp'] as num?)?.toDouble();
+        wind = (w['speed'] as num?)?.toDouble();
+        press = (m['pressure'] as num?)?.toDouble();
+        humid = (m['humidity'] as num?)?.toInt();
+      }
 
       return WeatherStrip(
-        temperature: temp,
-        windSpeed: windSpeed,
-        pressure: pressure,
-        trackCondition: humidity,
+        temperature: temp != null ? FormatUtils.formatTemp(temp) : null,
+        windSpeed: wind != null ? FormatUtils.formatWindSpeed(wind) : null,
+        pressure: press != null ? '${press.round()} hPa' : null,
+        trackCondition: humid != null ? '$humid%' : null,
       );
     } catch (_) {
       return const SizedBox.shrink();

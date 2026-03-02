@@ -88,6 +88,7 @@ class SessionRepository {
   /// Writes to local DB, then enqueues the change to the sync queue.
   Future<void> updateSession({
     required String sessionId,
+    String? circuitName,
     String? carId,
     String? trackCondition,
     String? tyreBrand,
@@ -98,6 +99,7 @@ class SessionRepository {
     bool? isPublic,
   }) async {
     final companion = LocalSessionsCompanion(
+      circuitName: Value(circuitName),
       carId: carId != null ? Value(carId) : const Value.absent(),
       trackCondition: trackCondition != null
           ? Value(trackCondition)
@@ -124,6 +126,7 @@ class SessionRepository {
         'user_id': session.userId,
         'car_id': session.carId,
         'circuit_id': session.circuitId,
+        'circuit_name': session.circuitName,
         'started_at': session.startedAt.toIso8601String(),
         'ended_at': session.endedAt?.toIso8601String(),
         'track_condition': session.trackCondition,

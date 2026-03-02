@@ -36,7 +36,19 @@ class WeatherData {
     return 'dry';
   }
 
-  Map<String, dynamic> toJson() => rawJson;
+  /// Returns a normalized flat structure for storage in the session.
+  /// This is what gets stored in weatherJson and parsed by session detail.
+  Map<String, dynamic> toJson() => {
+        'temp': tempCelsius,
+        'feels_like': feelsLike,
+        'humidity': humidity,
+        'pressure': pressure,
+        'wind_speed': windSpeed,
+        'wind_deg': windDeg,
+        'description': description,
+        'icon': icon,
+        if (rain1h != null) 'rain_1h': rain1h,
+      };
 
   /// Parse from One Call API 3.0 response.
   factory WeatherData.fromOneCallJson(Map<String, dynamic> json) {

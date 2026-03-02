@@ -42,7 +42,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration {
@@ -60,6 +60,10 @@ class AppDatabase extends _$AppDatabase {
           await m.addColumn(localCars, localCars.engineCapacity);
           await m.addColumn(localCars, localCars.modifications);
           await m.addColumn(localCars, localCars.tyreSetup);
+        }
+        if (from < 3) {
+          // v3: Add circuit name directly on sessions
+          await m.addColumn(localSessions, localSessions.circuitName);
         }
       },
     );

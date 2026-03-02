@@ -5,6 +5,7 @@ class LocalSessions extends Table {
   TextColumn get userId => text()();
   TextColumn get carId => text().nullable()();
   TextColumn get circuitId => text().nullable()();
+  TextColumn get circuitName => text().nullable()(); // User-entered circuit/track name
   DateTimeColumn get startedAt => dateTime()();
   DateTimeColumn get endedAt => dateTime().nullable()();
   TextColumn get trackCondition => text().nullable()(); // dry, damp, wet, mixed

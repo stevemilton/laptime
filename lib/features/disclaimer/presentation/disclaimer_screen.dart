@@ -9,6 +9,7 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/supabase_provider.dart';
+import '../../profile/data/profile_repository.dart';
 import '../data/disclaimer_repository.dart';
 
 /// Provider for disclaimer acceptance state.
@@ -202,6 +203,16 @@ class _DisclaimerScreenState extends ConsumerState<DisclaimerScreen> {
     try {
       final db = ref.read(databaseProvider);
       final client = ref.read(supabaseClientProvider);
+
+      // Ensure local profile exists (safety net for existing users)
+      final profileRepo = ProfileRepository(db, client);
+      final meta = user.userMetadata;
+      final name = meta?['full_name'] as String? ??
+          meta?['name'] as String? ??
+          user.email?.split('@').first ??
+          'Driver';
+      await profileRepo.ensureLocalProfile(userId: user.id, displayName: name);
+
       final repo = DisclaimerRepository(db, client);
 
       final packageInfo = await PackageInfo.fromPlatform();

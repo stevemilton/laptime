@@ -31,6 +31,7 @@ class _SessionEditScreenState extends ConsumerState<SessionEditScreen> {
   final _formKey = GlobalKey<FormState>();
 
   // Form state
+  final _circuitNameController = TextEditingController();
   String? _selectedCarId;
   String _trackCondition = 'dry';
   final _tyreBrandController = TextEditingController();
@@ -52,6 +53,7 @@ class _SessionEditScreenState extends ConsumerState<SessionEditScreen> {
 
   @override
   void dispose() {
+    _circuitNameController.dispose();
     _tyreBrandController.dispose();
     _tyreCompoundController.dispose();
     _tyreAgeLapsController.dispose();
@@ -78,6 +80,7 @@ class _SessionEditScreenState extends ConsumerState<SessionEditScreen> {
 
     setState(() {
       _cars = cars;
+      _circuitNameController.text = session.circuitName ?? '';
       _selectedCarId = session.carId;
       _trackCondition = session.trackCondition ?? 'dry';
       _tyreBrandController.text = session.tyreBrand ?? '';
@@ -105,6 +108,9 @@ class _SessionEditScreenState extends ConsumerState<SessionEditScreen> {
 
       await repo.updateSession(
         sessionId: widget.sessionId,
+        circuitName: _circuitNameController.text.trim().isEmpty
+            ? null
+            : _circuitNameController.text.trim(),
         carId: _selectedCarId,
         trackCondition: _trackCondition,
         tyreBrand: _tyreBrandController.text.isNotEmpty
@@ -202,6 +208,21 @@ class _SessionEditScreenState extends ConsumerState<SessionEditScreen> {
       child: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         children: [
+          // Circuit / Track name
+          _buildSectionLabel('CIRCUIT / TRACK'),
+          const SizedBox(height: 8),
+          TextFormField(
+            controller: _circuitNameController,
+            decoration: const InputDecoration(
+              labelText: 'Circuit Name',
+              hintText: 'e.g. Brands Hatch, Silverstone',
+              prefixIcon: Icon(LucideIcons.mapPin, size: 18),
+            ),
+            textCapitalization: TextCapitalization.words,
+            textInputAction: TextInputAction.next,
+          ),
+          const SizedBox(height: 24),
+
           // Car picker
           _buildSectionLabel('CAR'),
           const SizedBox(height: 8),
