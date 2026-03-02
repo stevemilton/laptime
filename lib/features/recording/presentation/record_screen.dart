@@ -83,9 +83,7 @@ class _RecordScreenState extends ConsumerState<RecordScreen>
                 ),
                 // Settings button
                 IconButton(
-                  onPressed: () {
-                    // TODO: Navigate to settings
-                  },
+                  onPressed: () => context.push('/settings'),
                   icon: const Icon(
                     LucideIcons.settings,
                     color: AppColors.textTertiary,

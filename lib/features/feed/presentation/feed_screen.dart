@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
@@ -65,9 +66,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
               children: [
                 Text('Feed', style: AppTypography.headlineLarge),
                 IconButton(
-                  onPressed: () {
-                    // TODO: Navigate to search/following
-                  },
+                  onPressed: () => context.push('/following'),
                   icon: const Icon(
                     LucideIcons.userPlus,
                     color: AppColors.purple,
@@ -270,9 +269,7 @@ class _EmptyTeamsFeed extends StatelessWidget {
       title: 'No teams yet',
       subtitle: 'Join a team with a team code to see shared sessions.',
       actionLabel: 'Join Team',
-      onAction: () {
-        // TODO: Show join team dialog
-      },
+      onAction: () => context.push('/teams'),
     );
   }
 }

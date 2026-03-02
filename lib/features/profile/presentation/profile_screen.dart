@@ -115,9 +115,7 @@ class ProfileScreen extends ConsumerWidget {
                 AppPill.outlined(
                   label: 'Settings',
                   icon: LucideIcons.settings,
-                  onTap: () {
-                    // TODO: Navigate to settings
-                  },
+                  onTap: () => context.push('/settings'),
                 ),
                 const Spacer(),
                 AppPill.outlined(

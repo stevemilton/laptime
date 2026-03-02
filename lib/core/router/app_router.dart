@@ -16,6 +16,12 @@ import '../../features/session/presentation/session_edit_screen.dart';
 import '../../features/session/presentation/lap_detail_screen.dart';
 import '../../features/profile/presentation/edit_profile_screen.dart';
 import '../../features/garage/presentation/car_form_screen.dart';
+import '../../features/sectors/presentation/sector_creation_screen.dart';
+import '../../features/settings/presentation/settings_screen.dart';
+import '../../features/settings/presentation/legal_screen.dart';
+import '../../features/social/presentation/following_screen.dart';
+import '../../features/social/presentation/teams_screen.dart';
+import '../../features/telemetry/presentation/lap_comparison_screen.dart';
 import '../theme/app_colors.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -116,6 +122,22 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         },
       ),
 
+      // Lap comparison (full-screen, no bottom tabs)
+      GoRoute(
+        path: '/session/:id/compare',
+        name: RouteNames.lapComparison,
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          final lap1 = state.uri.queryParameters['lap1'] ?? '';
+          final lap2 = state.uri.queryParameters['lap2'] ?? '';
+          return LapComparisonScreen(
+            sessionId: id,
+            lap1Id: lap1,
+            lap2Id: lap2,
+          );
+        },
+      ),
+
       // Edit profile (full-screen)
       GoRoute(
         path: '/edit-profile',
@@ -136,6 +158,58 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           final id = state.pathParameters['id']!;
           return CarFormScreen(carId: id);
         },
+      ),
+
+      // Sector creation (full-screen)
+      GoRoute(
+        path: '/sector/create',
+        name: RouteNames.sectorCreation,
+        builder: (context, state) => const SectorCreationScreen(),
+      ),
+
+      // Settings (full-screen)
+      GoRoute(
+        path: '/settings',
+        name: RouteNames.settings,
+        builder: (context, state) => const SettingsScreen(),
+      ),
+
+      // Legal screens (full-screen)
+      GoRoute(
+        path: '/privacy-policy',
+        name: RouteNames.privacyPolicy,
+        builder: (context, state) => const LegalScreen(
+          title: 'Privacy Policy',
+          assetPath: 'assets/legal/privacy.md',
+        ),
+      ),
+      GoRoute(
+        path: '/terms',
+        name: RouteNames.terms,
+        builder: (context, state) => const LegalScreen(
+          title: 'Terms of Service',
+          assetPath: 'assets/legal/terms.md',
+        ),
+      ),
+      GoRoute(
+        path: '/legal-disclaimer',
+        name: RouteNames.legalDisclaimer,
+        builder: (context, state) => const LegalScreen(
+          title: 'Disclaimer',
+          assetPath: 'assets/legal/disclaimer.md',
+        ),
+      ),
+
+      // Social screens (full-screen)
+      GoRoute(
+        path: '/following',
+        name: RouteNames.following,
+        builder: (context, state) => const FollowingScreen(),
+      ),
+      GoRoute(
+        path: '/teams',
+        name: RouteNames.teams,
+        builder: (context, state) => const TeamsScreen(),
       ),
 
       // Main app shell with bottom tabs
