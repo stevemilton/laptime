@@ -136,12 +136,12 @@ class _LapDetailScreenState extends ConsumerState<LapDetailScreen> {
           const SizedBox(height: 16),
         ],
 
-        // GPS trace map placeholder
+        // GPS trace map
         const SectionHeader(title: 'GPS Trace'),
         const SizedBox(height: 4),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: _buildMapPlaceholder(),
+          child: _buildTraceMap(),
         ),
 
         const SizedBox(height: 24),
@@ -271,42 +271,12 @@ class _LapDetailScreenState extends ConsumerState<LapDetailScreen> {
     }
   }
 
-  Widget _buildMapPlaceholder() {
-    return AppCard(
-      padding: EdgeInsets.zero,
-      child: Container(
-        height: 200,
-        decoration: BoxDecoration(
-          color: AppColors.ghost,
-          borderRadius: BorderRadius.circular(AppRadii.lg),
-        ),
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                LucideIcons.map,
-                size: 32,
-                color: AppColors.textTertiary,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'GPS Trace Map',
-                style: AppTypography.bodyMedium.copyWith(
-                  color: AppColors.textTertiary,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Coming in a future update',
-                style: AppTypography.bodySmall.copyWith(
-                  color: AppColors.textTertiary,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+  Widget _buildTraceMap() {
+    final points = parseTraceJson(_lap?.traceJson);
+    return TraceMap(
+      trace1: points,
+      height: 220,
+      interactive: true,
     );
   }
 

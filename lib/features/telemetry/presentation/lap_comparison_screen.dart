@@ -8,7 +8,6 @@ import 'package:lucide_icons/lucide_icons.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/services/sensor_service.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/format_utils.dart';
 import '../../../core/widgets/widgets.dart';
@@ -184,12 +183,12 @@ class _LapComparisonScreenState extends ConsumerState<LapComparisonScreen>
 
         const SizedBox(height: 16),
 
-        // GPS map placeholder
+        // GPS overlay map
         const SectionHeader(title: 'Track Map'),
         const SizedBox(height: 4),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: _buildMapPlaceholder(),
+          child: _buildComparisonMap(),
         ),
 
         const SizedBox(height: 24),
@@ -343,42 +342,16 @@ class _LapComparisonScreenState extends ConsumerState<LapComparisonScreen>
     );
   }
 
-  Widget _buildMapPlaceholder() {
-    return AppCard(
-      padding: EdgeInsets.zero,
-      child: Container(
-        height: 180,
-        decoration: BoxDecoration(
-          color: AppColors.ghost,
-          borderRadius: BorderRadius.circular(AppRadii.lg),
-        ),
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                LucideIcons.map,
-                size: 32,
-                color: AppColors.textTertiary,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'GPS Overlay Coming Soon',
-                style: AppTypography.bodyMedium.copyWith(
-                  color: AppColors.textTertiary,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Lap traces will be overlaid on the circuit map',
-                style: AppTypography.bodySmall.copyWith(
-                  color: AppColors.textTertiary,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+  Widget _buildComparisonMap() {
+    final points1 = parseTraceJson(_lap1?.traceJson);
+    final points2 = parseTraceJson(_lap2?.traceJson);
+    return TraceMap(
+      trace1: points1,
+      trace2: points2,
+      color1: AppColors.purple,
+      color2: AppColors.green,
+      height: 200,
+      interactive: true,
     );
   }
 

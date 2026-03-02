@@ -11,5 +11,6 @@ export 'loading_overlay.dart';
 export 'p1_badge.dart';
 export 'section_header.dart';
 export 'stat_cell.dart';
+export 'trace_map.dart';
 export 'track_condition_pill.dart';
 export 'weather_strip.dart';

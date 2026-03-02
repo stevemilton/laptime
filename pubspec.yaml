@@ -86,9 +86,7 @@ flutter:
   fonts:
     - family: Rufner
       fonts:
-        - asset: assets/fonts/Rufner-Regular.ttf
-        - asset: assets/fonts/Rufner-Bold.ttf
-          weight: 700
+        - asset: assets/fonts/Rufner-Regular.otf
 
     - family: RethinkSans
       fonts:

@@ -3,12 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
+import 'package:latlong2/latlong.dart';
+
 import '../../../core/database/app_database.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/supabase_provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/widgets/trace_map.dart';
 import '../data/sector_repository.dart';
 
 /// Full-screen route for creating a new sector definition.
@@ -32,6 +35,17 @@ class _SectorCreationScreenState extends ConsumerState<SectorCreationScreen> {
   List<LocalCircuit> _circuits = [];
   bool _isLoading = false;
   bool _circuitsLoaded = false;
+  LatLng? _startPoint;
+  LatLng? _endPoint;
+
+  LocalCircuit? get _selectedCircuit {
+    if (_selectedCircuitId == null) return null;
+    try {
+      return _circuits.firstWhere((c) => c.id == _selectedCircuitId);
+    } catch (_) {
+      return null;
+    }
+  }
 
   @override
   void initState() {
@@ -143,37 +157,31 @@ class _SectorCreationScreenState extends ConsumerState<SectorCreationScreen> {
                   ),
                   const SizedBox(height: 24),
 
-                  // Map placeholder
-                  Container(
-                    height: 160,
-                    decoration: BoxDecoration(
-                      color: AppColors.ghost,
-                      borderRadius: BorderRadius.circular(AppRadii.md),
-                      border: Border.all(color: AppColors.border),
-                    ),
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            LucideIcons.map,
-                            size: 32,
-                            color: AppColors.textTertiary,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Map coming soon',
-                            style: AppTypography.labelMedium,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Enter coordinates manually below',
-                            style: AppTypography.bodySmall
-                                .copyWith(color: AppColors.textTertiary),
-                          ),
-                        ],
-                      ),
-                    ),
+                  // Interactive map for placing sector points
+                  SectorMap(
+                    circuitLat: _selectedCircuit?.gpsLat,
+                    circuitLng: _selectedCircuit?.gpsLng,
+                    startPoint: _startPoint,
+                    endPoint: _endPoint,
+                    height: 200,
+                    onStartPointSet: (point) {
+                      setState(() {
+                        _startPoint = point;
+                        _startLatController.text =
+                            point.latitude.toStringAsFixed(6);
+                        _startLngController.text =
+                            point.longitude.toStringAsFixed(6);
+                      });
+                    },
+                    onEndPointSet: (point) {
+                      setState(() {
+                        _endPoint = point;
+                        _endLatController.text =
+                            point.latitude.toStringAsFixed(6);
+                        _endLngController.text =
+                            point.longitude.toStringAsFixed(6);
+                      });
+                    },
                   ),
                   const SizedBox(height: 24),
 
