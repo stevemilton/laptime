@@ -25,20 +25,24 @@ class ProfileRepository {
         .watchSingleOrNull();
   }
 
-  /// Update display name and handle.
+  /// Update display name, handle, and avatar.
+  ///
+  /// Uses upsert: if the profile row doesn't exist yet it will be created,
+  /// preventing silent UPDATE-on-zero-rows failures.
   Future<void> updateProfile({
     required String userId,
     String? displayName,
     String? handle,
     String? avatarUrl,
   }) async {
-    await (_db.update(_db.localProfiles)
-          ..where((t) => t.id.equals(userId)))
-        .write(LocalProfilesCompanion(
-      displayName: displayName != null ? Value(displayName) : const Value.absent(),
-      handle: handle != null ? Value(handle) : const Value.absent(),
-      avatarUrl: avatarUrl != null ? Value(avatarUrl) : const Value.absent(),
-    ));
+    await _db.into(_db.localProfiles).insertOnConflictUpdate(
+      LocalProfilesCompanion.insert(
+        id: userId,
+        displayName: Value(displayName ?? 'Driver'),
+        handle: Value(handle),
+        avatarUrl: Value(avatarUrl),
+      ),
+    );
 
     // Enqueue sync
     final payload = <String, dynamic>{'id': userId};

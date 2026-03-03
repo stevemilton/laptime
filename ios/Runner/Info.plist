@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Laptime</string>
+	<string>TestTrack</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>laptime</string>
+	<string>TestTrack</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -55,36 +55,36 @@
 	<string>Main</string>
 	<!-- Location permissions -->
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>LapTime uses your location to record GPS traces during track sessions for lap timing and telemetry analysis.</string>
+	<string>TestTrack uses your location to record GPS traces during track sessions for lap timing and telemetry analysis.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>LapTime uses your location in the background to continue recording your track session while the screen is off.</string>
+	<string>TestTrack uses your location in the background to continue recording your track session while the screen is off.</string>
 	<key>NSLocationAlwaysUsageDescription</key>
-	<string>LapTime uses your location in the background to continue recording your track session while the screen is off.</string>
+	<string>TestTrack uses your location in the background to continue recording your track session while the screen is off.</string>
 	<!-- Motion permissions -->
 	<key>NSMotionUsageDescription</key>
-	<string>LapTime uses motion sensors (accelerometer, gyroscope) to record telemetry data like g-forces and yaw rate during track sessions.</string>
+	<string>TestTrack uses motion sensors (accelerometer, gyroscope) to record telemetry data like g-forces and yaw rate during track sessions.</string>
 	<!-- Camera / Photo Library for avatar -->
 	<key>NSCameraUsageDescription</key>
-	<string>LapTime uses your camera to take a profile photo.</string>
+	<string>TestTrack uses your camera to take a profile photo.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>LapTime accesses your photo library to select a profile photo.</string>
+	<string>TestTrack accesses your photo library to select a profile photo.</string>
 	<!-- Background modes -->
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
 	</array>
-	<!-- Google Sign-In URL scheme - uncomment when credentials are configured -->
-	<!-- <key>CFBundleURLTypes</key>
+	<!-- Google Sign-In URL scheme -->
+	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>$(GOOGLE_REVERSED_CLIENT_ID)</string>
+				<string>com.googleusercontent.apps.723368260490-v0pbl3giupl0d20gmfho66sub9mtpc58</string>
 			</array>
 		</dict>
-	</array> -->
+	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

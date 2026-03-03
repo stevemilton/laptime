@@ -239,7 +239,28 @@ class SyncService {
       case 'update':
         await _supabase.from(table).upsert(payload);
       case 'delete':
-        await _supabase.from(table).delete().eq('id', recordId);
+        // Composite-PK tables don't have a single 'id' column.
+        // Use payload fields for the delete filter instead.
+        const compositePkTables = {
+          'team_members': ['team_id', 'user_id'],
+          'crew_members': ['crew_id', 'user_id'],
+        };
+
+        if (compositePkTables.containsKey(table)) {
+          var query = _supabase.from(table).delete();
+          for (final col in compositePkTables[table]!) {
+            final value = payload[col];
+            if (value == null) {
+              throw StateError(
+                'Missing composite PK field "$col" in payload for $table delete',
+              );
+            }
+            query = query.eq(col, value);
+          }
+          await query;
+        } else {
+          await _supabase.from(table).delete().eq('id', recordId);
+        }
       default:
         throw ArgumentError('Unknown sync operation: $operation');
     }

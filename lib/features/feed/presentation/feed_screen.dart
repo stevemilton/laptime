@@ -12,6 +12,7 @@ import '../../../core/widgets/p1_badge.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/utils/format_utils.dart';
 import '../data/feed_repository.dart';
+import '../../social/data/team_providers.dart';
 
 /// Feed provider for the "Following" tab.
 final followingFeedProvider = FutureProvider<List<FeedItem>>((ref) async {
@@ -97,7 +98,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
               children: [
                 _FeedList(feedProvider: followingFeedProvider),
                 _FeedList(feedProvider: nearbyFeedProvider),
-                _EmptyTeamsFeed(),
+                const _TeamsFeedTab(),
               ],
             ),
           ),
@@ -261,15 +262,61 @@ class _StatPill extends StatelessWidget {
   }
 }
 
-class _EmptyTeamsFeed extends StatelessWidget {
+class _TeamsFeedTab extends ConsumerWidget {
+  const _TeamsFeedTab();
+
   @override
-  Widget build(BuildContext context) {
-    return EmptyState(
-      icon: LucideIcons.users,
-      title: 'No teams yet',
-      subtitle: 'Join a team with a team code to see shared sessions.',
-      actionLabel: 'Join Team',
-      onAction: () => context.push('/teams'),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = ref.watch(currentUserProvider);
+    if (user == null) {
+      return const EmptyState(
+        icon: LucideIcons.users,
+        title: 'Sign in to see team sessions',
+      );
+    }
+
+    final teamsAsync = ref.watch(userTeamsProvider);
+
+    return teamsAsync.when(
+      data: (teams) {
+        if (teams.isEmpty) {
+          return EmptyState(
+            icon: LucideIcons.users,
+            title: 'No teams yet',
+            subtitle: 'Find or create a team to see shared sessions here.',
+            actionLabel: 'Find a Team',
+            onAction: () => context.push('/team-search'),
+          );
+        }
+
+        // Has teams — show their feed
+        final feedAsync = ref.watch(teamsFeedProvider);
+        return feedAsync.when(
+          data: (items) {
+            if (items.isEmpty) {
+              return const EmptyState(
+                icon: LucideIcons.rss,
+                title: 'No team sessions yet',
+                subtitle:
+                    'Sessions from your teammates will appear here.',
+              );
+            }
+
+            return ListView.separated(
+              padding: const EdgeInsets.all(20),
+              itemCount: items.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 12),
+              itemBuilder: (context, index) =>
+                  _FeedCard(item: items[index]),
+            );
+          },
+          loading: () =>
+              const Center(child: CircularProgressIndicator()),
+          error: (e, _) => Center(child: Text('Error: $e')),
+        );
+      },
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(child: Text('Error: $e')),
     );
   }
 }

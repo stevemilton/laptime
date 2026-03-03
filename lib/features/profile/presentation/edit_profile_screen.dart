@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:path_provider/path_provider.dart';
@@ -157,8 +158,15 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     );
   }
 
+  /// Check whether a local image file actually exists on disk.
+  bool _imageFileExists(String? url) {
+    if (url == null || url.isEmpty) return false;
+    if (url.startsWith('http')) return true;
+    return File(url).existsSync();
+  }
+
   Widget _buildAvatar() {
-    if (_avatarUrl != null && _avatarUrl!.isNotEmpty) {
+    if (_imageFileExists(_avatarUrl)) {
       final isLocal = !_avatarUrl!.startsWith('http');
       return Container(
         width: 80,
@@ -241,28 +249,54 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
 
     if (source == null) return;
 
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(
-      source: source,
-      maxWidth: 512,
-      maxHeight: 512,
-      imageQuality: 85,
-    );
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: source,
+        maxWidth: 800,
+        maxHeight: 800,
+        imageQuality: 90,
+      );
 
-    if (picked != null) {
+      if (picked == null || !mounted) return;
+
+      // Crop to square for avatar
+      final cropped = await ImageCropper().cropImage(
+        sourcePath: picked.path,
+        aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+        uiSettings: [
+          IOSUiSettings(
+            title: 'Crop Photo',
+            aspectRatioLockEnabled: true,
+            resetAspectRatioEnabled: false,
+          ),
+        ],
+      );
+
+      if (cropped == null || !mounted) return;
+
       // Copy to app documents directory for persistence
       final appDir = await getApplicationDocumentsDirectory();
       final avatarsDir = Directory(path.join(appDir.path, 'avatars'));
       if (!await avatarsDir.exists()) {
         await avatarsDir.create(recursive: true);
       }
-      final ext = path.extension(picked.path);
+      final ext = path.extension(cropped.path);
       final fileName = 'avatar_${DateTime.now().millisecondsSinceEpoch}$ext';
       final savedPath = path.join(avatarsDir.path, fileName);
-      await File(picked.path).copy(savedPath);
+      await File(cropped.path).copy(savedPath);
 
       if (mounted) {
         setState(() => _avatarUrl = savedPath);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not load image: $e'),
+            backgroundColor: AppColors.red,
+          ),
+        );
       }
     }
   }

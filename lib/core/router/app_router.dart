@@ -17,11 +17,17 @@ import '../../features/session/presentation/sessions_list_screen.dart';
 import '../../features/session/presentation/lap_detail_screen.dart';
 import '../../features/profile/presentation/edit_profile_screen.dart';
 import '../../features/garage/presentation/car_form_screen.dart';
+import '../../features/garage/presentation/garage_screen.dart';
 import '../../features/sectors/presentation/sector_creation_screen.dart';
 import '../../features/settings/presentation/settings_screen.dart';
 import '../../features/settings/presentation/legal_screen.dart';
 import '../../features/social/presentation/following_screen.dart';
 import '../../features/social/presentation/teams_screen.dart';
+import '../../features/social/presentation/team_detail_screen.dart';
+import '../../features/social/presentation/team_search_screen.dart';
+import '../../features/social/presentation/team_join_requests_screen.dart';
+import '../../features/social/presentation/create_team_screen.dart';
+import '../../features/social/presentation/crew_detail_screen.dart';
 import '../../features/telemetry/presentation/lap_comparison_screen.dart';
 import '../theme/app_colors.dart';
 
@@ -153,6 +159,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const EditProfileScreen(),
       ),
 
+      // Garage list (full-screen)
+      GoRoute(
+        path: '/garage',
+        name: RouteNames.garage,
+        builder: (context, state) => const GarageScreen(),
+      ),
+
       // Car form - new or edit (full-screen)
       GoRoute(
         path: '/car/new',
@@ -218,6 +231,40 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/teams',
         name: RouteNames.teams,
         builder: (context, state) => const TeamsScreen(),
+      ),
+      GoRoute(
+        path: '/team/create',
+        name: RouteNames.createTeam,
+        builder: (context, state) => const CreateTeamScreen(),
+      ),
+      GoRoute(
+        path: '/team-search',
+        name: RouteNames.teamSearch,
+        builder: (context, state) => const TeamSearchScreen(),
+      ),
+      GoRoute(
+        path: '/team/:id',
+        name: RouteNames.teamDetail,
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          return TeamDetailScreen(teamId: id);
+        },
+      ),
+      GoRoute(
+        path: '/team/:id/requests',
+        name: RouteNames.teamJoinRequests,
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          return TeamJoinRequestsScreen(teamId: id);
+        },
+      ),
+      GoRoute(
+        path: '/crew/:id',
+        name: RouteNames.crewDetail,
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          return CrewDetailScreen(crewId: id);
+        },
       ),
 
       // Main app shell with bottom tabs

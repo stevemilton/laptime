@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:path_provider/path_provider.dart';
@@ -354,14 +355,22 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
     );
   }
 
+  /// Check whether a local image file actually exists on disk.
+  bool _imageFileExists(String? path) {
+    if (path == null || path.isEmpty) return false;
+    if (path.startsWith('http')) return true;
+    return File(path).existsSync();
+  }
+
   Widget _buildPhotoSection() {
-    final hasImage = _imageUrl != null && _imageUrl!.isNotEmpty;
+    final hasImage = _imageFileExists(_imageUrl);
 
     return GestureDetector(
       onTap: _pickImage,
       child: Container(
         height: 200,
         width: double.infinity,
+        clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           color: AppColors.ghost,
           borderRadius: BorderRadius.circular(AppRadii.lg),
@@ -370,18 +379,18 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
             width: hasImage ? 0 : 1.5,
             strokeAlign: BorderSide.strokeAlignInside,
           ),
-          image: hasImage
-              ? DecorationImage(
-                  image: _imageUrl!.startsWith('http')
-                      ? NetworkImage(_imageUrl!) as ImageProvider
-                      : FileImage(File(_imageUrl!)),
-                  fit: BoxFit.cover,
-                )
-              : null,
         ),
         child: hasImage
             ? Stack(
+                fit: StackFit.expand,
                 children: [
+                  Image(
+                    image: _imageUrl!.startsWith('http')
+                        ? NetworkImage(_imageUrl!) as ImageProvider
+                        : FileImage(File(_imageUrl!)),
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => _buildPhotoPlaceholder(),
+                  ),
                   // Dark overlay gradient at bottom
                   Positioned(
                     left: 0,
@@ -390,10 +399,6 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
                     child: Container(
                       height: 60,
                       decoration: BoxDecoration(
-                        borderRadius: const BorderRadius.only(
-                          bottomLeft: Radius.circular(AppRadii.lg),
-                          bottomRight: Radius.circular(AppRadii.lg),
-                        ),
                         gradient: LinearGradient(
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
@@ -433,40 +438,44 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
                   ),
                 ],
               )
-            : Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    width: 56,
-                    height: 56,
-                    decoration: const BoxDecoration(
-                      color: AppColors.purplePale,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      LucideIcons.camera,
-                      size: 24,
-                      color: AppColors.purple,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Add Vehicle Photo',
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: AppColors.textSecondary,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Tap to take a photo or choose from gallery',
-                    style: AppTypography.bodySmall.copyWith(
-                      color: AppColors.textTertiary,
-                    ),
-                  ),
-                ],
-              ),
+            : _buildPhotoPlaceholder(),
       ),
+    );
+  }
+
+  Widget _buildPhotoPlaceholder() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Container(
+          width: 56,
+          height: 56,
+          decoration: const BoxDecoration(
+            color: AppColors.purplePale,
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(
+            LucideIcons.camera,
+            size: 24,
+            color: AppColors.purple,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'Add Vehicle Photo',
+          style: AppTypography.bodyMedium.copyWith(
+            color: AppColors.textSecondary,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Tap to take a photo or choose from gallery',
+          style: AppTypography.bodySmall.copyWith(
+            color: AppColors.textTertiary,
+          ),
+        ),
+      ],
     );
   }
 
@@ -520,28 +529,57 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
 
     if (source == null) return;
 
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(
-      source: source,
-      maxWidth: 1200,
-      maxHeight: 800,
-      imageQuality: 85,
-    );
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: source,
+        maxWidth: 1600,
+        maxHeight: 1200,
+        imageQuality: 90,
+      );
 
-    if (picked != null) {
+      if (picked == null || !mounted) return;
+
+      // Crop the image
+      final cropped = await ImageCropper().cropImage(
+        sourcePath: picked.path,
+        aspectRatio: const CropAspectRatio(ratioX: 16, ratioY: 9),
+        uiSettings: [
+          IOSUiSettings(
+            title: 'Crop Photo',
+            aspectRatioLockEnabled: false,
+            resetAspectRatioEnabled: true,
+            aspectRatioPickerButtonHidden: false,
+            rotateButtonsHidden: false,
+            rotateClockwiseButtonHidden: true,
+          ),
+        ],
+      );
+
+      if (cropped == null || !mounted) return;
+
       // Copy to app documents directory for persistence
       final appDir = await getApplicationDocumentsDirectory();
       final carsDir = Directory(p.join(appDir.path, 'car_images'));
       if (!await carsDir.exists()) {
         await carsDir.create(recursive: true);
       }
-      final ext = p.extension(picked.path);
+      final ext = p.extension(cropped.path);
       final fileName = 'car_${DateTime.now().millisecondsSinceEpoch}$ext';
       final savedPath = p.join(carsDir.path, fileName);
-      await File(picked.path).copy(savedPath);
+      await File(cropped.path).copy(savedPath);
 
       if (mounted) {
         setState(() => _imageUrl = savedPath);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not load image: $e'),
+            backgroundColor: AppColors.red,
+          ),
+        );
       }
     }
   }

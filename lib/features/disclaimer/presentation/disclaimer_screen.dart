@@ -87,7 +87,7 @@ class _DisclaimerScreenState extends ConsumerState<DisclaimerScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Please read this carefully before using LapTime.',
+                        'Please read this carefully before using TestTrack.',
                         style: AppTypography.bodyMedium.copyWith(
                           color: AppColors.textPrimary,
                           fontWeight: FontWeight.w600,
@@ -148,7 +148,7 @@ class _DisclaimerScreenState extends ConsumerState<DisclaimerScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'I have read and understand this disclaimer. I accept full responsibility for my actions while using LapTime.',
+                        'I have read and understand this disclaimer. I accept full responsibility for my actions while using TestTrack.',
                         style: AppTypography.bodySmall.copyWith(
                           color: AppColors.textPrimary,
                           fontWeight: FontWeight.w500,

@@ -123,7 +123,7 @@ class SettingsScreen extends ConsumerWidget {
             icon: LucideIcons.car,
             title: 'Garage',
             subtitle: 'Manage your cars',
-            onTap: () => context.push('/car/new'),
+            onTap: () => context.push('/garage'),
           ),
 
           const Divider(indent: 56),

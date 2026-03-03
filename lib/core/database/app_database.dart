@@ -15,6 +15,8 @@ import 'tables/sectors_table.dart';
 import 'tables/sector_times_table.dart';
 import 'tables/follows_table.dart';
 import 'tables/teams_table.dart';
+import 'tables/crews_table.dart';
+import 'tables/team_join_requests_table.dart';
 import 'tables/disclaimer_table.dart';
 import 'tables/sync_queue_table.dart';
 
@@ -32,6 +34,9 @@ part 'app_database.g.dart';
   LocalFollows,
   LocalTeams,
   LocalTeamMembers,
+  LocalCrews,
+  LocalCrewMembers,
+  LocalTeamJoinRequests,
   LocalDisclaimerAcceptances,
   LocalSyncQueue,
 ])
@@ -42,7 +47,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration {
@@ -64,6 +69,18 @@ class AppDatabase extends _$AppDatabase {
         if (from < 3) {
           // v3: Add circuit name directly on sessions
           await m.addColumn(localSessions, localSessions.circuitName);
+        }
+        if (from < 4) {
+          // v4: Expand team system (crews, join requests, team metadata)
+          await m.addColumn(localTeams, localTeams.location);
+          await m.addColumn(localTeams, localTeams.logoUrl);
+          await m.addColumn(localTeams, localTeams.verified);
+          await m.createTable(localCrews);
+          await m.createTable(localCrewMembers);
+          await m.createTable(localTeamJoinRequests);
+          // Migrate 'owner' role to 'admin'
+          await customStatement(
+              "UPDATE local_team_members SET role = 'admin' WHERE role = 'owner'");
         }
       },
     );

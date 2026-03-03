@@ -63,7 +63,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
               // Logo / App Name
               Text(
-                'LapTime',
+                'TestTrack',
                 style: AppTypography.displayMedium.copyWith(
                   color: AppColors.purpleDeep,
                 ),
@@ -89,6 +89,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   isLoading: isLoading,
                   onTap: () =>
                       ref.read(authControllerProvider.notifier).signInWithApple(),
+                ),
+                const SizedBox(height: 12),
+
+                // Google Sign In
+                _SocialButton(
+                  label: 'Continue with Google',
+                  icon: LucideIcons.chrome,
+                  backgroundColor: AppColors.white,
+                  foregroundColor: AppColors.textPrimary,
+                  borderColor: AppColors.border,
+                  isLoading: isLoading,
+                  onTap: () =>
+                      ref.read(authControllerProvider.notifier).signInWithGoogle(),
                 ),
                 const SizedBox(height: 24),
 

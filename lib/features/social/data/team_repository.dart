@@ -5,55 +5,239 @@ import 'package:uuid/uuid.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/database/app_database.dart';
 
-/// Repository for team operations.
+const _uuid = Uuid();
+
+// ── Data Models ──
+
+class TeamInfo {
+  TeamInfo({
+    required this.id,
+    required this.name,
+    required this.code,
+    required this.createdBy,
+    this.location,
+    this.logoUrl,
+    this.verified = false,
+    required this.memberCount,
+    this.currentUserRole,
+    this.pendingRequestCount = 0,
+  });
+
+  final String id;
+  final String name;
+  final String code;
+  final String createdBy;
+  final String? location;
+  final String? logoUrl;
+  final bool verified;
+  final int memberCount;
+  final String? currentUserRole;
+  final int pendingRequestCount;
+}
+
+class TeamMemberInfo {
+  TeamMemberInfo({
+    required this.teamId,
+    required this.userId,
+    required this.role,
+    required this.joinedAt,
+    required this.displayName,
+    this.handle,
+    this.avatarUrl,
+  });
+
+  final String teamId;
+  final String userId;
+  final String role;
+  final DateTime joinedAt;
+  final String displayName;
+  final String? handle;
+  final String? avatarUrl;
+}
+
+class TeamSearchResult {
+  TeamSearchResult({
+    required this.id,
+    required this.name,
+    this.location,
+    this.logoUrl,
+    this.verified = false,
+    required this.memberCount,
+    this.membershipStatus,
+  });
+
+  final String id;
+  final String name;
+  final String? location;
+  final String? logoUrl;
+  final bool verified;
+  final int memberCount;
+  final String? membershipStatus; // 'member' | 'pending' | null
+}
+
+class JoinRequestInfo {
+  JoinRequestInfo({
+    required this.id,
+    required this.teamId,
+    required this.userId,
+    required this.status,
+    this.message,
+    required this.requestedAt,
+    this.reviewedBy,
+    this.reviewedAt,
+    this.rejectionReason,
+    required this.displayName,
+    this.handle,
+    this.avatarUrl,
+  });
+
+  final String id;
+  final String teamId;
+  final String userId;
+  final String status;
+  final String? message;
+  final DateTime requestedAt;
+  final String? reviewedBy;
+  final DateTime? reviewedAt;
+  final String? rejectionReason;
+  final String displayName;
+  final String? handle;
+  final String? avatarUrl;
+}
+
+// ── Repository ──
+
 class TeamRepository {
   TeamRepository(this._db, this._client);
 
   final AppDatabase _db;
   final SupabaseClient _client;
-  static const _uuid = Uuid();
 
-  /// Get teams the user belongs to.
+  // ── Queries ──
+
   Future<List<TeamInfo>> getUserTeams(String userId) async {
-    // Get team IDs the user is a member of
     final memberships = await (_db.select(_db.localTeamMembers)
           ..where((t) => t.userId.equals(userId)))
         .get();
 
-    final teamIds = memberships.map((m) => m.teamId).toList();
-    if (teamIds.isEmpty) return [];
+    if (memberships.isEmpty) return [];
 
     final teams = <TeamInfo>[];
-    for (final teamId in teamIds) {
+    for (final membership in memberships) {
       final team = await (_db.select(_db.localTeams)
-            ..where((t) => t.id.equals(teamId)))
+            ..where((t) => t.id.equals(membership.teamId)))
           .getSingleOrNull();
       if (team == null) continue;
 
-      // Count members
-      final members = await (_db.select(_db.localTeamMembers)
-            ..where((t) => t.teamId.equals(teamId)))
-          .get();
+      final memberCount = await _countTeamMembers(team.id);
+      final pendingCount = await _countPendingRequests(team.id);
 
       teams.add(TeamInfo(
         id: team.id,
         name: team.name,
         code: team.code,
         createdBy: team.createdBy,
-        memberCount: members.length,
+        location: team.location,
+        logoUrl: team.logoUrl,
+        verified: team.verified,
+        memberCount: memberCount,
+        currentUserRole: membership.role,
+        pendingRequestCount: pendingCount,
       ));
     }
 
     return teams;
   }
 
-  /// Create a new team with an auto-generated code.
+  Future<TeamInfo?> getTeam(String teamId, {String? currentUserId}) async {
+    final team = await (_db.select(_db.localTeams)
+          ..where((t) => t.id.equals(teamId)))
+        .getSingleOrNull();
+    if (team == null) return null;
+
+    final memberCount = await _countTeamMembers(teamId);
+    final pendingCount = await _countPendingRequests(teamId);
+
+    String? role;
+    if (currentUserId != null) {
+      role = await getUserRoleInTeam(teamId, currentUserId);
+    }
+
+    return TeamInfo(
+      id: team.id,
+      name: team.name,
+      code: team.code,
+      createdBy: team.createdBy,
+      location: team.location,
+      logoUrl: team.logoUrl,
+      verified: team.verified,
+      memberCount: memberCount,
+      currentUserRole: role,
+      pendingRequestCount: pendingCount,
+    );
+  }
+
+  Future<List<TeamMemberInfo>> getTeamMembers(String teamId) async {
+    final members = await (_db.select(_db.localTeamMembers)
+          ..where((t) => t.teamId.equals(teamId)))
+        .get();
+
+    final result = <TeamMemberInfo>[];
+    for (final m in members) {
+      final profile = await _db.getProfile(m.userId);
+      result.add(TeamMemberInfo(
+        teamId: m.teamId,
+        userId: m.userId,
+        role: m.role,
+        joinedAt: m.joinedAt,
+        displayName: profile?.displayName ?? 'Driver',
+        handle: profile?.handle,
+        avatarUrl: profile?.avatarUrl,
+      ));
+    }
+
+    // Sort: admins first, then by joinedAt
+    result.sort((a, b) {
+      if (a.role == 'admin' && b.role != 'admin') return -1;
+      if (a.role != 'admin' && b.role == 'admin') return 1;
+      return a.joinedAt.compareTo(b.joinedAt);
+    });
+
+    return result;
+  }
+
+  Future<String?> getUserRoleInTeam(String teamId, String userId) async {
+    final membership = await (_db.select(_db.localTeamMembers)
+          ..where(
+              (t) => t.teamId.equals(teamId) & t.userId.equals(userId)))
+        .getSingleOrNull();
+    return membership?.role;
+  }
+
+  Future<int> getAdminCount(String teamId) async {
+    final admins = await (_db.select(_db.localTeamMembers)
+          ..where(
+              (t) => t.teamId.equals(teamId) & t.role.equals('admin')))
+        .get();
+    return admins.length;
+  }
+
+  // ── Create ──
+
   Future<TeamInfo> createTeam({
     required String name,
     required String createdBy,
+    String? location,
   }) async {
+    if (name.length < 2 || name.length > 100) {
+      throw ArgumentError('Team name must be 2-100 characters');
+    }
+    if (location != null && location.length > 200) {
+      throw ArgumentError('Location must be at most 200 characters');
+    }
+
     final id = _uuid.v4();
-    final code = _generateTeamCode();
+    final code = _generateInviteCode();
 
     await _db.into(_db.localTeams).insert(
       LocalTeamsCompanion.insert(
@@ -61,19 +245,19 @@ class TeamRepository {
         name: name,
         code: code,
         createdBy: createdBy,
+        location: Value(location),
       ),
     );
 
-    // Add creator as member with 'owner' role
+    // Add creator as admin
     await _db.into(_db.localTeamMembers).insert(
       LocalTeamMembersCompanion.insert(
         teamId: id,
         userId: createdBy,
-        role: const Value('owner'),
+        role: const Value('admin'),
       ),
     );
 
-    // Enqueue sync for team
     await _db.enqueueSync(
       targetTable: 'teams',
       operation: 'insert',
@@ -83,10 +267,10 @@ class TeamRepository {
         'name': name,
         'code': code,
         'created_by': createdBy,
+        if (location != null) 'location': location,
       }),
     );
 
-    // Enqueue sync for membership
     await _db.enqueueSync(
       targetTable: 'team_members',
       operation: 'insert',
@@ -94,7 +278,7 @@ class TeamRepository {
       payloadJson: jsonEncode({
         'team_id': id,
         'user_id': createdBy,
-        'role': 'owner',
+        'role': 'admin',
       }),
     );
 
@@ -103,41 +287,133 @@ class TeamRepository {
       name: name,
       code: code,
       createdBy: createdBy,
+      location: location,
       memberCount: 1,
+      currentUserRole: 'admin',
     );
   }
 
-  /// Join a team by its code.
-  Future<void> joinTeam({
+  // ── Update ──
+
+  Future<void> updateTeam({
+    required String teamId,
+    String? name,
+    String? location,
+    String? logoUrl,
+  }) async {
+    if (name != null && (name.length < 2 || name.length > 100)) {
+      throw ArgumentError('Team name must be 2-100 characters');
+    }
+    if (location != null && location.length > 200) {
+      throw ArgumentError('Location must be at most 200 characters');
+    }
+
+    final companion = LocalTeamsCompanion(
+      name: name != null ? Value(name) : const Value.absent(),
+      location: location != null ? Value(location) : const Value.absent(),
+      logoUrl: logoUrl != null ? Value(logoUrl) : const Value.absent(),
+    );
+
+    await (_db.update(_db.localTeams)..where((t) => t.id.equals(teamId)))
+        .write(companion);
+
+    final team = await (_db.select(_db.localTeams)
+          ..where((t) => t.id.equals(teamId)))
+        .getSingleOrNull();
+    if (team == null) return;
+
+    await _db.enqueueSync(
+      targetTable: 'teams',
+      operation: 'update',
+      recordId: teamId,
+      payloadJson: jsonEncode({
+        'id': teamId,
+        'name': team.name,
+        'code': team.code,
+        'created_by': team.createdBy,
+        if (team.location != null) 'location': team.location,
+        if (team.logoUrl != null) 'logo_url': team.logoUrl,
+        'verified': team.verified,
+      }),
+    );
+  }
+
+  // ── Delete ──
+
+  Future<void> deleteTeam(String teamId) async {
+    // Cascade: crew members → crews → team members → join requests → team
+    final crews = await (_db.select(_db.localCrews)
+          ..where((t) => t.teamId.equals(teamId)))
+        .get();
+
+    for (final crew in crews) {
+      await (_db.delete(_db.localCrewMembers)
+            ..where((t) => t.crewId.equals(crew.id)))
+          .go();
+      await _db.enqueueSync(
+        targetTable: 'crews',
+        operation: 'delete',
+        recordId: crew.id,
+        payloadJson: jsonEncode({'id': crew.id}),
+      );
+    }
+
+    await (_db.delete(_db.localCrews)
+          ..where((t) => t.teamId.equals(teamId)))
+        .go();
+
+    await (_db.delete(_db.localTeamMembers)
+          ..where((t) => t.teamId.equals(teamId)))
+        .go();
+
+    await (_db.delete(_db.localTeamJoinRequests)
+          ..where((t) => t.teamId.equals(teamId)))
+        .go();
+
+    await (_db.delete(_db.localTeams)
+          ..where((t) => t.id.equals(teamId)))
+        .go();
+
+    await _db.enqueueSync(
+      targetTable: 'teams',
+      operation: 'delete',
+      recordId: teamId,
+      payloadJson: jsonEncode({'id': teamId}),
+    );
+  }
+
+  // ── Join / Leave ──
+
+  Future<void> joinTeamByCode({
     required String code,
     required String userId,
   }) async {
-    // Look up team by code (try local first, then remote)
     var team = await (_db.select(_db.localTeams)
-          ..where((t) => t.code.equals(code)))
+          ..where((t) => t.code.equals(code.toUpperCase())))
         .getSingleOrNull();
 
     if (team == null) {
-      // Try Supabase
       try {
         final response = await _client
             .from('teams')
             .select()
-            .eq('code', code)
+            .eq('code', code.toUpperCase())
             .single();
 
-        // Insert team locally
         await _db.into(_db.localTeams).insert(
           LocalTeamsCompanion.insert(
             id: response['id'] as String,
             name: response['name'] as String,
             code: response['code'] as String,
             createdBy: response['created_by'] as String,
+            location: Value(response['location'] as String?),
+            logoUrl: Value(response['logo_url'] as String?),
+            verified: Value(response['verified'] as bool? ?? false),
           ),
         );
 
         team = await (_db.select(_db.localTeams)
-              ..where((t) => t.code.equals(code)))
+              ..where((t) => t.code.equals(code.toUpperCase())))
             .getSingleOrNull();
       } catch (_) {
         throw Exception('Team not found with code: $code');
@@ -146,15 +422,13 @@ class TeamRepository {
 
     if (team == null) throw Exception('Team not found');
 
-    // Check if already a member
     final existing = await (_db.select(_db.localTeamMembers)
-          ..where((t) =>
-              t.teamId.equals(team!.id) & t.userId.equals(userId)))
+          ..where(
+              (t) => t.teamId.equals(team!.id) & t.userId.equals(userId)))
         .getSingleOrNull();
 
     if (existing != null) throw Exception('Already a member of this team');
 
-    // Add membership
     await _db.into(_db.localTeamMembers).insert(
       LocalTeamMembersCompanion.insert(
         teamId: team.id,
@@ -162,7 +436,6 @@ class TeamRepository {
       ),
     );
 
-    // Enqueue sync
     await _db.enqueueSync(
       targetTable: 'team_members',
       operation: 'insert',
@@ -175,14 +448,51 @@ class TeamRepository {
     );
   }
 
-  /// Leave a team.
   Future<void> leaveTeam({
     required String teamId,
     required String userId,
   }) async {
+    final role = await getUserRoleInTeam(teamId, userId);
+    if (role == 'admin') {
+      final adminCount = await getAdminCount(teamId);
+      if (adminCount <= 1) {
+        throw Exception(
+            'Cannot leave — you are the last admin. Promote another member first.');
+      }
+    }
+
+    // Remove from all crews in this team
+    final crews = await (_db.select(_db.localCrews)
+          ..where((t) => t.teamId.equals(teamId)))
+        .get();
+
+    for (final crew in crews) {
+      final crewMembership = await (_db.select(_db.localCrewMembers)
+            ..where(
+                (t) => t.crewId.equals(crew.id) & t.userId.equals(userId)))
+          .getSingleOrNull();
+
+      if (crewMembership != null) {
+        await (_db.delete(_db.localCrewMembers)
+              ..where((t) =>
+                  t.crewId.equals(crew.id) & t.userId.equals(userId)))
+            .go();
+
+        await _db.enqueueSync(
+          targetTable: 'crew_members',
+          operation: 'delete',
+          recordId: '${crew.id}_$userId',
+          payloadJson: jsonEncode({
+            'crew_id': crew.id,
+            'user_id': userId,
+          }),
+        );
+      }
+    }
+
     await (_db.delete(_db.localTeamMembers)
-          ..where((t) =>
-              t.teamId.equals(teamId) & t.userId.equals(userId)))
+          ..where(
+              (t) => t.teamId.equals(teamId) & t.userId.equals(userId)))
         .go();
 
     await _db.enqueueSync(
@@ -196,27 +506,445 @@ class TeamRepository {
     );
   }
 
-  /// Generate a random 6-character team code.
-  String _generateTeamCode() {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    final random = Random.secure();
-    return List.generate(6, (_) => chars[random.nextInt(chars.length)]).join();
+  Future<void> removeMember({
+    required String teamId,
+    required String userId,
+    required String removedByUserId,
+  }) async {
+    if (userId == removedByUserId) {
+      throw Exception('Cannot remove yourself. Use Leave Team instead.');
+    }
+
+    final crews = await (_db.select(_db.localCrews)
+          ..where((t) => t.teamId.equals(teamId)))
+        .get();
+
+    for (final crew in crews) {
+      await (_db.delete(_db.localCrewMembers)
+            ..where(
+                (t) => t.crewId.equals(crew.id) & t.userId.equals(userId)))
+          .go();
+
+      await _db.enqueueSync(
+        targetTable: 'crew_members',
+        operation: 'delete',
+        recordId: '${crew.id}_$userId',
+        payloadJson: jsonEncode({
+          'crew_id': crew.id,
+          'user_id': userId,
+        }),
+      );
+    }
+
+    await (_db.delete(_db.localTeamMembers)
+          ..where(
+              (t) => t.teamId.equals(teamId) & t.userId.equals(userId)))
+        .go();
+
+    await _db.enqueueSync(
+      targetTable: 'team_members',
+      operation: 'delete',
+      recordId: '${teamId}_$userId',
+      payloadJson: jsonEncode({
+        'team_id': teamId,
+        'user_id': userId,
+      }),
+    );
   }
-}
 
-/// Team info with member count.
-class TeamInfo {
-  TeamInfo({
-    required this.id,
-    required this.name,
-    required this.code,
-    required this.createdBy,
-    required this.memberCount,
-  });
+  // ── Role Management ──
 
-  final String id;
-  final String name;
-  final String code;
-  final String createdBy;
-  final int memberCount;
+  Future<void> promoteToAdmin({
+    required String teamId,
+    required String userId,
+  }) async {
+    final adminCount = await getAdminCount(teamId);
+    if (adminCount >= 3) {
+      throw Exception('Maximum 3 admins per team');
+    }
+
+    await (_db.update(_db.localTeamMembers)
+          ..where(
+              (t) => t.teamId.equals(teamId) & t.userId.equals(userId)))
+        .write(const LocalTeamMembersCompanion(role: Value('admin')));
+
+    await _db.enqueueSync(
+      targetTable: 'team_members',
+      operation: 'update',
+      recordId: '${teamId}_$userId',
+      payloadJson: jsonEncode({
+        'team_id': teamId,
+        'user_id': userId,
+        'role': 'admin',
+      }),
+    );
+  }
+
+  Future<void> demoteToMember({
+    required String teamId,
+    required String userId,
+  }) async {
+    final adminCount = await getAdminCount(teamId);
+    if (adminCount <= 1) {
+      throw Exception(
+          'Cannot demote — this is the last admin. Promote another member first.');
+    }
+
+    await (_db.update(_db.localTeamMembers)
+          ..where(
+              (t) => t.teamId.equals(teamId) & t.userId.equals(userId)))
+        .write(const LocalTeamMembersCompanion(role: Value('member')));
+
+    await _db.enqueueSync(
+      targetTable: 'team_members',
+      operation: 'update',
+      recordId: '${teamId}_$userId',
+      payloadJson: jsonEncode({
+        'team_id': teamId,
+        'user_id': userId,
+        'role': 'member',
+      }),
+    );
+  }
+
+  // ── Invite Code ──
+
+  Future<String> regenerateInviteCode(String teamId) async {
+    final newCode = _generateInviteCode();
+
+    await (_db.update(_db.localTeams)..where((t) => t.id.equals(teamId)))
+        .write(LocalTeamsCompanion(code: Value(newCode)));
+
+    final team = await (_db.select(_db.localTeams)
+          ..where((t) => t.id.equals(teamId)))
+        .getSingleOrNull();
+    if (team != null) {
+      await _db.enqueueSync(
+        targetTable: 'teams',
+        operation: 'update',
+        recordId: teamId,
+        payloadJson: jsonEncode({
+          'id': teamId,
+          'name': team.name,
+          'code': newCode,
+          'created_by': team.createdBy,
+          if (team.location != null) 'location': team.location,
+          if (team.logoUrl != null) 'logo_url': team.logoUrl,
+          'verified': team.verified,
+        }),
+      );
+    }
+
+    return newCode;
+  }
+
+  // ── Search (Supabase only) ──
+
+  Future<List<TeamSearchResult>> searchTeams(
+    String query, {
+    String? currentUserId,
+  }) async {
+    if (query.length < 2) return [];
+
+    try {
+      final response = await _client
+          .from('teams')
+          .select('*, team_members(count)')
+          .or('name.ilike.%$query%,location.ilike.%$query%')
+          .order('name')
+          .limit(20);
+
+      Set<String> memberTeamIds = {};
+      Set<String> pendingTeamIds = {};
+
+      if (currentUserId != null) {
+        final memberships = await _client
+            .from('team_members')
+            .select('team_id')
+            .eq('user_id', currentUserId);
+        memberTeamIds =
+            (memberships as List).map((m) => m['team_id'] as String).toSet();
+
+        final requests = await _client
+            .from('team_join_requests')
+            .select('team_id')
+            .eq('user_id', currentUserId)
+            .eq('status', 'pending');
+        pendingTeamIds =
+            (requests as List).map((r) => r['team_id'] as String).toSet();
+      }
+
+      return (response as List).map((json) {
+        final teamId = json['id'] as String;
+        String? status;
+        if (memberTeamIds.contains(teamId)) {
+          status = 'member';
+        } else if (pendingTeamIds.contains(teamId)) {
+          status = 'pending';
+        }
+
+        final countData = json['team_members'] as List?;
+        final memberCount = countData?.isNotEmpty == true
+            ? (countData!.first['count'] as int? ?? 0)
+            : 0;
+
+        return TeamSearchResult(
+          id: teamId,
+          name: json['name'] as String,
+          location: json['location'] as String?,
+          logoUrl: json['logo_url'] as String?,
+          verified: json['verified'] as bool? ?? false,
+          memberCount: memberCount,
+          membershipStatus: status,
+        );
+      }).toList();
+    } catch (e) {
+      return [];
+    }
+  }
+
+  // ── Join Requests ──
+
+  Future<void> submitJoinRequest({
+    required String teamId,
+    required String userId,
+    String? message,
+  }) async {
+    if (message != null && message.length > 500) {
+      throw ArgumentError('Message must be at most 500 characters');
+    }
+
+    final existingMembership = await getUserRoleInTeam(teamId, userId);
+    if (existingMembership != null) {
+      throw Exception('Already a member of this team');
+    }
+
+    final existing = await (_db.select(_db.localTeamJoinRequests)
+          ..where((t) =>
+              t.teamId.equals(teamId) &
+              t.userId.equals(userId) &
+              t.status.equals('pending')))
+        .getSingleOrNull();
+
+    if (existing != null) {
+      throw Exception('You already have a pending request for this team');
+    }
+
+    final id = _uuid.v4();
+
+    await _db.into(_db.localTeamJoinRequests).insert(
+      LocalTeamJoinRequestsCompanion.insert(
+        id: id,
+        teamId: teamId,
+        userId: userId,
+        message: Value(message),
+      ),
+    );
+
+    await _db.enqueueSync(
+      targetTable: 'team_join_requests',
+      operation: 'insert',
+      recordId: id,
+      payloadJson: jsonEncode({
+        'id': id,
+        'team_id': teamId,
+        'user_id': userId,
+        'status': 'pending',
+        if (message != null) 'message': message,
+      }),
+    );
+  }
+
+  Future<void> cancelJoinRequest({
+    required String requestId,
+    required String userId,
+  }) async {
+    await (_db.update(_db.localTeamJoinRequests)
+          ..where((t) => t.id.equals(requestId) & t.userId.equals(userId)))
+        .write(const LocalTeamJoinRequestsCompanion(
+      status: Value('cancelled'),
+    ));
+
+    await _db.enqueueSync(
+      targetTable: 'team_join_requests',
+      operation: 'update',
+      recordId: requestId,
+      payloadJson: jsonEncode({
+        'id': requestId,
+        'status': 'cancelled',
+      }),
+    );
+  }
+
+  Future<List<JoinRequestInfo>> getPendingRequests(String teamId) async {
+    // Try remote first for enriched profile data
+    try {
+      final remoteRequests = await _client
+          .from('team_join_requests')
+          .select('*, profiles!inner(*)')
+          .eq('team_id', teamId)
+          .eq('status', 'pending')
+          .order('requested_at');
+
+      if (remoteRequests is List && remoteRequests.isNotEmpty) {
+        return remoteRequests.map((json) {
+          return JoinRequestInfo(
+            id: json['id'] as String,
+            teamId: json['team_id'] as String,
+            userId: json['user_id'] as String,
+            status: json['status'] as String,
+            message: json['message'] as String?,
+            requestedAt: DateTime.parse(json['requested_at'] as String),
+            reviewedBy: json['reviewed_by'] as String?,
+            reviewedAt: json['reviewed_at'] != null
+                ? DateTime.parse(json['reviewed_at'] as String)
+                : null,
+            rejectionReason: json['rejection_reason'] as String?,
+            displayName:
+                json['profiles']?['display_name'] as String? ?? 'Driver',
+            handle: json['profiles']?['handle'] as String?,
+            avatarUrl: json['profiles']?['avatar_url'] as String?,
+          );
+        }).toList();
+      }
+    } catch (_) {
+      // Fall back to local data
+    }
+
+    // Local fallback
+    final requests = await (_db.select(_db.localTeamJoinRequests)
+          ..where((t) =>
+              t.teamId.equals(teamId) & t.status.equals('pending'))
+          ..orderBy([(t) => OrderingTerm.asc(t.requestedAt)]))
+        .get();
+
+    final result = <JoinRequestInfo>[];
+    for (final r in requests) {
+      final profile = await _db.getProfile(r.userId);
+      result.add(JoinRequestInfo(
+        id: r.id,
+        teamId: r.teamId,
+        userId: r.userId,
+        status: r.status,
+        message: r.message,
+        requestedAt: r.requestedAt,
+        displayName: profile?.displayName ?? 'Driver',
+        handle: profile?.handle,
+        avatarUrl: profile?.avatarUrl,
+      ));
+    }
+
+    return result;
+  }
+
+  Future<void> approveJoinRequest({
+    required String requestId,
+    required String reviewerId,
+  }) async {
+    final request = await (_db.select(_db.localTeamJoinRequests)
+          ..where((t) => t.id.equals(requestId)))
+        .getSingleOrNull();
+
+    if (request == null) throw Exception('Join request not found');
+    if (request.status != 'pending') {
+      throw Exception('Request is no longer pending');
+    }
+
+    final now = DateTime.now();
+
+    await (_db.update(_db.localTeamJoinRequests)
+          ..where((t) => t.id.equals(requestId)))
+        .write(LocalTeamJoinRequestsCompanion(
+      status: const Value('approved'),
+      reviewedBy: Value(reviewerId),
+      reviewedAt: Value(now),
+    ));
+
+    await _db.into(_db.localTeamMembers).insertOnConflictUpdate(
+      LocalTeamMembersCompanion.insert(
+        teamId: request.teamId,
+        userId: request.userId,
+      ),
+    );
+
+    await _db.enqueueSync(
+      targetTable: 'team_join_requests',
+      operation: 'update',
+      recordId: requestId,
+      payloadJson: jsonEncode({
+        'id': requestId,
+        'status': 'approved',
+        'reviewed_by': reviewerId,
+        'reviewed_at': now.toIso8601String(),
+      }),
+    );
+
+    await _db.enqueueSync(
+      targetTable: 'team_members',
+      operation: 'insert',
+      recordId: '${request.teamId}_${request.userId}',
+      payloadJson: jsonEncode({
+        'team_id': request.teamId,
+        'user_id': request.userId,
+        'role': 'member',
+      }),
+    );
+  }
+
+  Future<void> rejectJoinRequest({
+    required String requestId,
+    required String reviewerId,
+    String? reason,
+  }) async {
+    if (reason != null && reason.length > 500) {
+      throw ArgumentError('Rejection reason must be at most 500 characters');
+    }
+
+    final now = DateTime.now();
+
+    await (_db.update(_db.localTeamJoinRequests)
+          ..where((t) => t.id.equals(requestId)))
+        .write(LocalTeamJoinRequestsCompanion(
+      status: const Value('rejected'),
+      reviewedBy: Value(reviewerId),
+      reviewedAt: Value(now),
+      rejectionReason: Value(reason),
+    ));
+
+    await _db.enqueueSync(
+      targetTable: 'team_join_requests',
+      operation: 'update',
+      recordId: requestId,
+      payloadJson: jsonEncode({
+        'id': requestId,
+        'status': 'rejected',
+        'reviewed_by': reviewerId,
+        'reviewed_at': now.toIso8601String(),
+        if (reason != null) 'rejection_reason': reason,
+      }),
+    );
+  }
+
+  // ── Private Helpers ──
+
+  Future<int> _countTeamMembers(String teamId) async {
+    final members = await (_db.select(_db.localTeamMembers)
+          ..where((t) => t.teamId.equals(teamId)))
+        .get();
+    return members.length;
+  }
+
+  Future<int> _countPendingRequests(String teamId) async {
+    final requests = await (_db.select(_db.localTeamJoinRequests)
+          ..where((t) =>
+              t.teamId.equals(teamId) & t.status.equals('pending')))
+        .get();
+    return requests.length;
+  }
+
+  String _generateInviteCode() {
+    final random = Random.secure();
+    return List.generate(
+        8, (_) => random.nextInt(16).toRadixString(16)).join().toUpperCase();
+  }
 }

@@ -17,6 +17,12 @@ abstract final class RouteNames {
   static const lapDetail = 'lapDetail';
   static const following = 'following';
   static const teams = 'teams';
+  static const teamDetail = 'teamDetail';
+  static const teamSearch = 'teamSearch';
+  static const teamJoinRequests = 'teamJoinRequests';
+  static const createTeam = 'createTeam';
+  static const crewDetail = 'crewDetail';
+  static const garage = 'garage';
   static const carForm = 'carForm';
   static const editProfile = 'editProfile';
   static const settings = 'settings';

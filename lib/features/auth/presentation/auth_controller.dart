@@ -12,13 +12,9 @@ final authRepositoryProvider = Provider<AuthRepository>((ref) {
   return AuthRepository(client);
 });
 
-/// Tracks the current auth state for router guards and UI.
-final authStateProvider = StreamProvider<AuthState>((ref) {
-  final repo = ref.watch(authRepositoryProvider);
-  return repo.onAuthStateChange;
-});
-
 /// Whether the user is currently signed in.
+///
+/// Watches [authStateProvider] from supabase_provider.dart (single source of truth).
 final isAuthenticatedProvider = Provider<bool>((ref) {
   final authState = ref.watch(authStateProvider);
   return authState.when(

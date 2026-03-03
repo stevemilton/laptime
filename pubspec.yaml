@@ -1,7 +1,7 @@
 name: laptime
 description: "Strava for track days. Record GPS traces, phone telemetry, and weather at amateur motorsport events."
 publish_to: 'none'
-version: 0.1.0+4
+version: 0.1.0+11
 
 environment:
   sdk: ^3.11.0
@@ -43,6 +43,7 @@ dependencies:
 
   # Images
   image_picker: ^1.1.2
+  image_cropper: ^11.0.0
 
   # Share
   share_plus: ^10.1.4
@@ -78,6 +79,15 @@ dev_dependencies:
   freezed: ^2.5.7
   json_serializable: ^6.9.0
   drift_dev: ^2.22.1
+
+  # App icon generation
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  ios: true
+  android: false
+  image_path: "icon.png"
+  remove_alpha_ios: true
 
 flutter:
   uses-material-design: true

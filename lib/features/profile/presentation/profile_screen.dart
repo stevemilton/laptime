@@ -325,10 +325,11 @@ class ProfileScreen extends ConsumerWidget {
     final avatarUrl = profile?.avatarUrl;
     final initials = _getInitials(profile?.displayName);
 
-    // If the avatar is a local file path, use FileImage
+    // If the avatar is a local file path that exists, use FileImage
     if (avatarUrl != null &&
         avatarUrl.isNotEmpty &&
-        !avatarUrl.startsWith('http')) {
+        !avatarUrl.startsWith('http') &&
+        File(avatarUrl).existsSync()) {
       return Container(
         width: 80,
         height: 80,
@@ -344,7 +345,7 @@ class ProfileScreen extends ConsumerWidget {
     }
 
     return AppAvatar.xl(
-      imageUrl: avatarUrl,
+      imageUrl: avatarUrl?.startsWith('http') == true ? avatarUrl : null,
       initials: initials,
     );
   }
@@ -445,9 +446,15 @@ class _CarCard extends StatelessWidget {
   final LocalCar car;
   final VoidCallback? onTap;
 
+  bool _imageFileExists(String? url) {
+    if (url == null || url.isEmpty) return false;
+    if (url.startsWith('http')) return true;
+    return File(url).existsSync();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final hasImage = car.imageUrl != null && car.imageUrl!.isNotEmpty;
+    final hasImage = _imageFileExists(car.imageUrl);
     final isKart = car.carClass == 'Kart';
 
     return GestureDetector(

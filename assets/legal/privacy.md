@@ -2,7 +2,7 @@ Privacy Policy
 
 Last updated: March 2026
 
-LapTime ("we", "our", or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, and share information when you use the LapTime mobile application.
+TestTrack ("we", "our", or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, and share information when you use the TestTrack mobile application.
 
 Information We Collect
 
@@ -18,7 +18,7 @@ We may collect device type, operating system version, and app version for crash 
 How We Use Your Information
 
 We use the information we collect to:
-- Provide and improve the LapTime service
+- Provide and improve the TestTrack service
 - Record and display your lap times and telemetry data
 - Enable social features such as following other drivers and team functionality
 - Generate leaderboards and performance analytics
@@ -54,4 +54,4 @@ We may update this Privacy Policy from time to time. We will notify you of any c
 
 Contact Us
 
-If you have questions about this Privacy Policy, please contact us at privacy@laptime.app.
+If you have questions about this Privacy Policy, please contact us at privacy@testtrack.app.
