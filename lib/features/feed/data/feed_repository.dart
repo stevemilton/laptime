@@ -76,12 +76,13 @@ class FeedRepository {
           .map((f) => f['following_id'] as String)
           .toList();
 
-      if (followedIds.isEmpty) return [];
+      // Always include the current user so their own sessions appear.
+      final feedUserIds = {...followedIds, userId}.toList();
 
       final response = await _client
           .from('sessions')
           .select('*, profiles!inner(*), circuits(*), cars(*)')
-          .inFilter('user_id', followedIds)
+          .inFilter('user_id', feedUserIds)
           .eq('is_public', true)
           .order('started_at', ascending: false)
           .range(offset, offset + limit - 1);

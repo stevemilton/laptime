@@ -2,10 +2,12 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../database/app_database.dart';
+import 'image_upload_service.dart';
 
 /// The current state of the sync engine.
 enum SyncStatus { idle, syncing, error }
@@ -69,11 +71,14 @@ class SyncService {
   SyncService({
     required AppDatabase database,
     required SupabaseClient supabaseClient,
+    required ImageUploadService imageUploadService,
   })  : _db = database,
-        _supabase = supabaseClient;
+        _supabase = supabaseClient,
+        _imageUpload = imageUploadService;
 
   final AppDatabase _db;
   final SupabaseClient _supabase;
+  final ImageUploadService _imageUpload;
 
   /// Maximum number of retry attempts per queue item.
   static const int maxRetries = 5;
@@ -209,11 +214,23 @@ class SyncService {
           item.operation != 'delete') {
         await _uploadSensorData(item);
       } else {
+        final payload =
+            jsonDecode(item.payloadJson) as Map<String, dynamic>;
+
+        // Upload any local image files before syncing to Supabase.
+        if (item.operation != 'delete') {
+          await _uploadImageFields(
+            table: item.targetTable,
+            recordId: item.recordId,
+            payload: payload,
+          );
+        }
+
         await _executeOperation(
           table: item.targetTable,
           operation: item.operation,
           recordId: item.recordId,
-          payload: jsonDecode(item.payloadJson) as Map<String, dynamic>,
+          payload: payload,
         );
       }
 
@@ -224,6 +241,70 @@ class SyncService {
         '(${item.targetTable}/${item.operation}): $e',
       );
       await _db.markSyncFailed(item.id, e.toString());
+    }
+  }
+
+  /// For each known image field in [payload], if the value is a local file
+  /// path (not an http URL), upload it to Supabase Storage and replace the
+  /// value with the public URL. Also updates the local Drift record so the
+  /// UI reactively picks up the remote URL.
+  Future<void> _uploadImageFields({
+    required String table,
+    required String recordId,
+    required Map<String, dynamic> payload,
+  }) async {
+    final userId = _supabase.auth.currentUser?.id;
+    if (userId == null) return;
+
+    for (final field in ImageUploadService.imageFields) {
+      final value = payload[field] as String?;
+      if (!ImageUploadService.isLocalPath(value)) continue;
+
+      final bucket = ImageUploadService.bucketFor(table, field);
+      if (bucket == null) continue;
+
+      final storagePath =
+          ImageUploadService.buildStoragePath(userId, recordId, value!);
+
+      final publicUrl = await _imageUpload.uploadFile(
+        localPath: value,
+        bucket: bucket,
+        storagePath: storagePath,
+      );
+
+      // Replace local path with public URL in the outgoing payload.
+      payload[field] = publicUrl;
+
+      // Update the local Drift record so the UI shows the remote URL.
+      await _updateLocalImageUrl(
+        table: table,
+        recordId: recordId,
+        field: field,
+        url: publicUrl,
+      );
+    }
+  }
+
+  /// Writes the uploaded public URL back to the local Drift record.
+  Future<void> _updateLocalImageUrl({
+    required String table,
+    required String recordId,
+    required String field,
+    required String url,
+  }) async {
+    switch ('$table:$field') {
+      case 'profiles:avatar_url':
+        await (_db.update(_db.localProfiles)
+              ..where((t) => t.id.equals(recordId)))
+            .write(LocalProfilesCompanion(avatarUrl: Value(url)));
+      case 'cars:image_url':
+        await (_db.update(_db.localCars)
+              ..where((t) => t.id.equals(recordId)))
+            .write(LocalCarsCompanion(imageUrl: Value(url)));
+      case 'teams:logo_url':
+        await (_db.update(_db.localTeams)
+              ..where((t) => t.id.equals(recordId)))
+            .write(LocalTeamsCompanion(logoUrl: Value(url)));
     }
   }
 

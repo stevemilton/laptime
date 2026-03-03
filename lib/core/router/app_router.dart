@@ -19,6 +19,7 @@ import '../../features/profile/presentation/edit_profile_screen.dart';
 import '../../features/garage/presentation/car_form_screen.dart';
 import '../../features/garage/presentation/garage_screen.dart';
 import '../../features/sectors/presentation/sector_creation_screen.dart';
+import '../../features/sectors/presentation/sector_from_lap_screen.dart';
 import '../../features/settings/presentation/settings_screen.dart';
 import '../../features/settings/presentation/legal_screen.dart';
 import '../../features/social/presentation/following_screen.dart';
@@ -186,6 +187,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/sector/create',
         name: RouteNames.sectorCreation,
         builder: (context, state) => const SectorCreationScreen(),
+      ),
+
+      // Sector from lap (full-screen)
+      GoRoute(
+        path: '/sector/from-lap',
+        name: RouteNames.sectorFromLap,
+        builder: (context, state) => const SectorFromLapScreen(),
       ),
 
       // Settings (full-screen)

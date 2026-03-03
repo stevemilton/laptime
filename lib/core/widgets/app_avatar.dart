@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../theme/app_colors.dart';
@@ -66,8 +68,23 @@ class AppAvatar extends StatelessWidget {
   final Color? borderColor;
   final double borderWidth;
 
+  /// Resolves the [imageUrl] to the appropriate [ImageProvider].
+  ///
+  /// - URLs starting with `http` → [NetworkImage]
+  /// - Local file paths that exist on disk → [FileImage]
+  /// - Everything else → `null` (falls back to initials / icon)
+  ImageProvider? _resolveImage() {
+    if (imageUrl == null || imageUrl!.isEmpty) return null;
+    if (imageUrl!.startsWith('http')) return NetworkImage(imageUrl!);
+    final file = File(imageUrl!);
+    if (file.existsSync()) return FileImage(file);
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final image = _resolveImage();
+
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -83,14 +100,14 @@ class AppAvatar extends StatelessWidget {
                     width: borderWidth,
                   )
                 : null,
-            image: imageUrl != null
+            image: image != null
                 ? DecorationImage(
-                    image: NetworkImage(imageUrl!),
+                    image: image,
                     fit: BoxFit.cover,
                   )
                 : null,
           ),
-          child: imageUrl == null
+          child: image == null
               ? Center(
                   child: initials != null
                       ? Text(

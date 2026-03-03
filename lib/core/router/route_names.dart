@@ -30,5 +30,6 @@ abstract final class RouteNames {
   static const terms = 'terms';
   static const legalDisclaimer = 'legalDisclaimer';
   static const sectorCreation = 'sectorCreation';
+  static const sectorFromLap = 'sectorFromLap';
   static const lapComparison = 'lapComparison';
 }

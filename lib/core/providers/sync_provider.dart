@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../services/image_upload_service.dart';
 import '../services/sync_service.dart';
 import 'connectivity_provider.dart';
 import 'database_provider.dart';
@@ -18,6 +19,7 @@ final syncServiceProvider = Provider<SyncService>((ref) {
   final service = SyncService(
     database: db,
     supabaseClient: supabase,
+    imageUploadService: ImageUploadService(supabaseClient: supabase),
   );
 
   // Start the 60-second periodic sync timer.

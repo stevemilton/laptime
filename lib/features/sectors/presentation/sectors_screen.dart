@@ -91,8 +91,7 @@ class _SectorsScreenState extends ConsumerState<SectorsScreen> {
                 Text('Sectors', style: AppTypography.headlineLarge),
                 _HeaderAction(
                   icon: LucideIcons.plus,
-                  onTap: () =>
-                      context.pushNamed(RouteNames.sectorCreation),
+                  onTap: () => _showCreationMethodPicker(),
                 ),
               ],
             ),
@@ -229,8 +228,7 @@ class _SectorsScreenState extends ConsumerState<SectorsScreen> {
             subtitle:
                 'Create sectors to start comparing times at this circuit.',
             actionLabel: 'Create Sector',
-            onAction: () =>
-                context.pushNamed(RouteNames.sectorCreation),
+            onAction: () => _showCreationMethodPicker(),
           );
         }
 
@@ -431,8 +429,7 @@ class _SectorsScreenState extends ConsumerState<SectorsScreen> {
                 subtitle:
                     'Define sectors on circuits to compare times with other drivers.',
                 actionLabel: 'Create Sector',
-                onAction: () =>
-                    context.pushNamed(RouteNames.sectorCreation),
+                onAction: () => _showCreationMethodPicker(),
               );
             }
 
@@ -449,8 +446,7 @@ class _SectorsScreenState extends ConsumerState<SectorsScreen> {
           right: 20,
           bottom: 20,
           child: FloatingActionButton(
-            onPressed: () =>
-                context.pushNamed(RouteNames.sectorCreation),
+            onPressed: () => _showCreationMethodPicker(),
             backgroundColor: AppColors.purple,
             child: const Icon(
               LucideIcons.plus,
@@ -459,6 +455,60 @@ class _SectorsScreenState extends ConsumerState<SectorsScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  void _showCreationMethodPicker() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
+              child: Text(
+                'Create Sector',
+                style: AppTypography.headlineSmall,
+              ),
+            ),
+            ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+              leading: const Icon(LucideIcons.spline, color: AppColors.purple),
+              title: Text('From My Laps', style: AppTypography.labelLarge),
+              subtitle: Text(
+                'Pick a recorded lap and scrub to set boundaries',
+                style: AppTypography.bodySmall,
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                this.context.pushNamed(RouteNames.sectorFromLap);
+              },
+            ),
+            ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+              leading:
+                  const Icon(LucideIcons.mapPin, color: AppColors.purple),
+              title:
+                  Text('From GPS Coordinates', style: AppTypography.labelLarge),
+              subtitle: Text(
+                'Tap the map or enter coordinates manually',
+                style: AppTypography.bodySmall,
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                this.context.pushNamed(RouteNames.sectorCreation);
+              },
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
     );
   }
 

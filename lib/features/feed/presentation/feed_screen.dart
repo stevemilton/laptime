@@ -123,7 +123,7 @@ class _FeedList extends ConsumerWidget {
           return EmptyState(
             icon: LucideIcons.rss,
             title: 'No sessions yet',
-            subtitle: 'Follow other drivers to see their sessions here.',
+            subtitle: 'Record a session or follow other drivers to build your feed.',
           );
         }
 

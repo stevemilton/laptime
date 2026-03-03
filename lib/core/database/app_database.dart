@@ -185,6 +185,15 @@ class AppDatabase extends _$AppDatabase {
         .get();
   }
 
+  // ── Circuit session helpers ──
+
+  Future<List<LocalSession>> getCircuitSessions(String circuitId) {
+    return (select(localSessions)
+          ..where((t) => t.circuitId.equals(circuitId))
+          ..orderBy([(t) => OrderingTerm.desc(t.startedAt)]))
+        .get();
+  }
+
   // ── Disclaimer helpers ──
 
   Future<LocalDisclaimerAcceptance?> getLatestDisclaimer(String userId) {
