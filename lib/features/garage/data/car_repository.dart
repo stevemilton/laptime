@@ -98,6 +98,9 @@ class CarRepository {
   }
 
   /// Update an existing car.
+  ///
+  /// Uses insertOnConflictUpdate (upsert) to ensure all fields are explicitly
+  /// written, matching the pattern used by ProfileRepository.updateProfile.
   Future<void> updateCar({
     required String carId,
     String? make,
@@ -113,24 +116,27 @@ class CarRepository {
     String? modifications,
     String? tyreSetup,
   }) async {
-    await (_db.update(_db.localCars)..where((t) => t.id.equals(carId))).write(
-      LocalCarsCompanion(
-        make: make != null ? Value(make) : const Value.absent(),
-        model: model != null ? Value(model) : const Value.absent(),
-        year: year != null ? Value(year) : const Value.absent(),
-        carClass: carClass != null ? Value(carClass) : const Value.absent(),
-        colour: colour != null ? Value(colour) : const Value.absent(),
-        imageUrl: imageUrl != null ? Value(imageUrl) : const Value.absent(),
-        powerHp: powerHp != null ? Value(powerHp) : const Value.absent(),
-        weightKg: weightKg != null ? Value(weightKg) : const Value.absent(),
-        drivetrain:
-            drivetrain != null ? Value(drivetrain) : const Value.absent(),
-        engineCapacity: engineCapacity != null
-            ? Value(engineCapacity)
-            : const Value.absent(),
-        modifications:
-            modifications != null ? Value(modifications) : const Value.absent(),
-        tyreSetup: tyreSetup != null ? Value(tyreSetup) : const Value.absent(),
+    // Fetch existing car to merge unchanged fields for a full upsert.
+    final existing = await getCar(carId);
+    if (existing == null) return;
+
+    await _db.into(_db.localCars).insertOnConflictUpdate(
+      LocalCarsCompanion.insert(
+        id: carId,
+        userId: existing.userId,
+        make: make ?? existing.make,
+        model: model ?? existing.model,
+        year: Value(year ?? existing.year),
+        carClass: Value(carClass ?? existing.carClass),
+        colour: Value(colour ?? existing.colour),
+        imageUrl: Value(imageUrl ?? existing.imageUrl),
+        powerHp: Value(powerHp ?? existing.powerHp),
+        weightKg: Value(weightKg ?? existing.weightKg),
+        drivetrain: Value(drivetrain ?? existing.drivetrain),
+        engineCapacity: Value(engineCapacity ?? existing.engineCapacity),
+        modifications: Value(modifications ?? existing.modifications),
+        tyreSetup: Value(tyreSetup ?? existing.tyreSetup),
+        createdAt: Value(existing.createdAt),
       ),
     );
 

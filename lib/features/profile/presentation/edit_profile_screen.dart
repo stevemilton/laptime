@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -250,6 +251,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     if (source == null) return;
 
     try {
+      debugPrint('[Avatar] Picking image from $source');
       final picker = ImagePicker();
       final picked = await picker.pickImage(
         source: source,
@@ -258,9 +260,15 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         imageQuality: 90,
       );
 
-      if (picked == null || !mounted) return;
+      if (picked == null) {
+        debugPrint('[Avatar] Picker returned null (user cancelled or permission denied)');
+        return;
+      }
+      if (!mounted) return;
+      debugPrint('[Avatar] Picked: ${picked.path}');
 
       // Crop to square for avatar
+      debugPrint('[Avatar] Opening cropper...');
       final cropped = await ImageCropper().cropImage(
         sourcePath: picked.path,
         aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
@@ -273,7 +281,12 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         ],
       );
 
-      if (cropped == null || !mounted) return;
+      if (cropped == null) {
+        debugPrint('[Avatar] Cropper returned null (user cancelled)');
+        return;
+      }
+      if (!mounted) return;
+      debugPrint('[Avatar] Cropped: ${cropped.path}');
 
       // Copy to app documents directory for persistence
       final appDir = await getApplicationDocumentsDirectory();
@@ -285,11 +298,15 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       final fileName = 'avatar_${DateTime.now().millisecondsSinceEpoch}$ext';
       final savedPath = path.join(avatarsDir.path, fileName);
       await File(cropped.path).copy(savedPath);
+      debugPrint('[Avatar] Saved to: $savedPath (exists: ${File(savedPath).existsSync()})');
 
       if (mounted) {
         setState(() => _avatarUrl = savedPath);
+        debugPrint('[Avatar] State updated with avatarUrl: $savedPath');
       }
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrint('[Avatar] ERROR: $e');
+      debugPrint('[Avatar] STACK: $stack');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

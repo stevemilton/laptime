@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -530,6 +531,7 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
     if (source == null) return;
 
     try {
+      debugPrint('[CarPhoto] Picking image from $source');
       final picker = ImagePicker();
       final picked = await picker.pickImage(
         source: source,
@@ -538,9 +540,15 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
         imageQuality: 90,
       );
 
-      if (picked == null || !mounted) return;
+      if (picked == null) {
+        debugPrint('[CarPhoto] Picker returned null (user cancelled or permission denied)');
+        return;
+      }
+      if (!mounted) return;
+      debugPrint('[CarPhoto] Picked: ${picked.path}');
 
       // Crop the image
+      debugPrint('[CarPhoto] Opening cropper...');
       final cropped = await ImageCropper().cropImage(
         sourcePath: picked.path,
         aspectRatio: const CropAspectRatio(ratioX: 16, ratioY: 9),
@@ -556,7 +564,12 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
         ],
       );
 
-      if (cropped == null || !mounted) return;
+      if (cropped == null) {
+        debugPrint('[CarPhoto] Cropper returned null (user cancelled)');
+        return;
+      }
+      if (!mounted) return;
+      debugPrint('[CarPhoto] Cropped: ${cropped.path}');
 
       // Copy to app documents directory for persistence
       final appDir = await getApplicationDocumentsDirectory();
@@ -568,11 +581,15 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
       final fileName = 'car_${DateTime.now().millisecondsSinceEpoch}$ext';
       final savedPath = p.join(carsDir.path, fileName);
       await File(cropped.path).copy(savedPath);
+      debugPrint('[CarPhoto] Saved to: $savedPath (exists: ${File(savedPath).existsSync()})');
 
       if (mounted) {
         setState(() => _imageUrl = savedPath);
+        debugPrint('[CarPhoto] State updated with imageUrl: $savedPath');
       }
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrint('[CarPhoto] ERROR: $e');
+      debugPrint('[CarPhoto] STACK: $stack');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -585,7 +602,12 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
   }
 
   Future<void> _save() async {
-    if (!(_formKey.currentState?.validate() ?? false)) return;
+    debugPrint('[CarSave] _save() called');
+    debugPrint('[CarSave] formKey.currentState: ${_formKey.currentState}');
+
+    final isValid = _formKey.currentState?.validate() ?? false;
+    debugPrint('[CarSave] Form valid: $isValid');
+    if (!isValid) return;
 
     setState(() => _isLoading = true);
 
@@ -608,7 +630,11 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
           ? null
           : _tyreSetupController.text.trim();
 
+      debugPrint('[CarSave] isEditing: $_isEditing, imageUrl: $_imageUrl');
+      debugPrint('[CarSave] make: ${_makeController.text.trim()}, model: ${_modelController.text.trim()}');
+
       if (_isEditing) {
+        debugPrint('[CarSave] Updating car ${widget.carId}...');
         await repo.updateCar(
           carId: widget.carId!,
           make: _makeController.text.trim(),
@@ -624,9 +650,12 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
           modifications: modifications,
           tyreSetup: tyreSetup,
         );
+        debugPrint('[CarSave] Update complete');
       } else {
         final user = ref.read(currentUserProvider);
+        debugPrint('[CarSave] Creating car, user: ${user?.id}');
         if (user == null) {
+          debugPrint('[CarSave] ERROR: user is null');
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -653,8 +682,10 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
           modifications: modifications,
           tyreSetup: tyreSetup,
         );
+        debugPrint('[CarSave] Create complete');
       }
 
+      debugPrint('[CarSave] Navigating back');
       if (mounted) {
         if (Navigator.of(context).canPop()) {
           context.pop();
@@ -662,7 +693,9 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
           context.go('/profile');
         }
       }
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrint('[CarSave] ERROR: $e');
+      debugPrint('[CarSave] STACK: $stack');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

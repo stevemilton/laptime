@@ -43,4 +43,21 @@ abstract final class FormatUtils {
     final kmh = (speedMs * 3.6).round();
     return '$kmh km/h';
   }
+
+  /// Formats a DateTime as a relative date string.
+  /// e.g. "Just now", "5m ago", "3h ago", "Yesterday", "4 days ago", "02/03/2026"
+  static String formatRelativeDate(DateTime dateTime) {
+    final now = DateTime.now();
+    final diff = now.difference(dateTime);
+
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inHours < 1) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    if (diff.inDays == 1) return 'Yesterday';
+    if (diff.inDays < 7) return '${diff.inDays} days ago';
+
+    final d = dateTime.day.toString().padLeft(2, '0');
+    final m = dateTime.month.toString().padLeft(2, '0');
+    return '$d/$m/${dateTime.year}';
+  }
 }

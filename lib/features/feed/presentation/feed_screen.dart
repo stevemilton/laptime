@@ -2,17 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import '../../../core/providers/database_provider.dart';
+import '../../../core/providers/supabase_provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
-import '../../../core/providers/supabase_provider.dart';
+import '../../../core/utils/format_utils.dart';
 import '../../../core/widgets/app_avatar.dart';
 import '../../../core/widgets/app_pill.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/p1_badge.dart';
 import '../../../core/widgets/empty_state.dart';
-import '../../../core/utils/format_utils.dart';
 import '../data/feed_repository.dart';
+import '../data/like_repository.dart';
 import '../../social/data/team_providers.dart';
+import 'comment_sheet.dart';
+import 'sector_sheet.dart';
 
 /// Feed provider for the "Following" tab.
 final followingFeedProvider = FutureProvider<List<FeedItem>>((ref) async {
@@ -123,7 +127,8 @@ class _FeedList extends ConsumerWidget {
           return EmptyState(
             icon: LucideIcons.rss,
             title: 'No sessions yet',
-            subtitle: 'Record a session or follow other drivers to build your feed.',
+            subtitle:
+                'Record a session or follow other drivers to build your feed.',
           );
         }
 
@@ -142,14 +147,15 @@ class _FeedList extends ConsumerWidget {
   }
 }
 
-class _FeedCard extends StatelessWidget {
+class _FeedCard extends ConsumerWidget {
   const _FeedCard({required this.item});
 
   final FeedItem item;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return AppCard(
+      onTap: () => context.push('/session/${item.sessionId}'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -174,13 +180,33 @@ class _FeedCard extends StatelessWidget {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    if (item.circuitName != null)
-                      Text(
-                        item.circuitName!,
-                        style: AppTypography.bodySmall.copyWith(
-                          color: AppColors.textTertiary,
+                    Row(
+                      children: [
+                        if (item.circuitName != null) ...[
+                          Flexible(
+                            child: Text(
+                              item.circuitName!,
+                              style: AppTypography.bodySmall.copyWith(
+                                color: AppColors.textTertiary,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Text(
+                            ' \u00B7 ',
+                            style: AppTypography.bodySmall.copyWith(
+                              color: AppColors.textTertiary,
+                            ),
+                          ),
+                        ],
+                        Text(
+                          FormatUtils.formatRelativeDate(item.startedAt),
+                          style: AppTypography.bodySmall.copyWith(
+                            color: AppColors.textTertiary,
+                          ),
                         ),
-                      ),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -216,24 +242,102 @@ class _FeedCard extends StatelessWidget {
               AppPill.outlined(
                 label: 'Sectors',
                 icon: LucideIcons.flag,
-                onTap: () {},
+                onTap: item.circuitId != null
+                    ? () => showSectorSheet(context, ref, item)
+                    : null,
               ),
               const SizedBox(width: 8),
-              AppPill.outlined(
-                label: 'Nice',
-                icon: LucideIcons.thumbsUp,
-                onTap: () {},
-              ),
+              _LikePill(item: item),
               const SizedBox(width: 8),
               AppPill.outlined(
-                label: 'Comment',
+                label: item.commentCount > 0
+                    ? 'Comment (${item.commentCount})'
+                    : 'Comment',
                 icon: LucideIcons.messageCircle,
-                onTap: () {},
+                onTap: () => showCommentSheet(context, ref, item.sessionId),
               ),
             ],
           ),
         ],
       ),
+    );
+  }
+}
+
+class _LikePill extends ConsumerStatefulWidget {
+  const _LikePill({required this.item});
+
+  final FeedItem item;
+
+  @override
+  ConsumerState<_LikePill> createState() => _LikePillState();
+}
+
+class _LikePillState extends ConsumerState<_LikePill> {
+  late bool _isLiked;
+  late int _likeCount;
+  bool _toggling = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _isLiked = widget.item.isLikedByMe;
+    _likeCount = widget.item.likeCount;
+  }
+
+  @override
+  void didUpdateWidget(covariant _LikePill oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.item.sessionId != widget.item.sessionId) {
+      _isLiked = widget.item.isLikedByMe;
+      _likeCount = widget.item.likeCount;
+    }
+  }
+
+  Future<void> _toggle() async {
+    if (_toggling) return;
+
+    final user = ref.read(currentUserProvider);
+    if (user == null) return;
+
+    // Optimistic update
+    setState(() {
+      _toggling = true;
+      _isLiked = !_isLiked;
+      _likeCount += _isLiked ? 1 : -1;
+    });
+
+    try {
+      final repo = LikeRepository(ref.read(databaseProvider));
+      await repo.toggleLike(widget.item.sessionId, user.id);
+
+      // Invalidate feed providers to refresh counts on next load
+      ref.invalidate(followingFeedProvider);
+      ref.invalidate(nearbyFeedProvider);
+    } catch (_) {
+      // Revert on error
+      if (mounted) {
+        setState(() {
+          _isLiked = !_isLiked;
+          _likeCount += _isLiked ? 1 : -1;
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _toggling = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final label = _likeCount > 0 ? 'Nice ($_likeCount)' : 'Nice';
+
+    return AppPill(
+      label: label,
+      icon: LucideIcons.thumbsUp,
+      onTap: _toggle,
+      backgroundColor: _isLiked ? AppColors.purplePale : AppColors.white,
+      foregroundColor: _isLiked ? AppColors.purple : AppColors.textSecondary,
+      borderColor: _isLiked ? AppColors.purpleBright : AppColors.border,
     );
   }
 }
@@ -305,7 +409,7 @@ class _TeamsFeedTab extends ConsumerWidget {
             return ListView.separated(
               padding: const EdgeInsets.all(20),
               itemCount: items.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 12),
+              separatorBuilder: (_, _) => const SizedBox(height: 12),
               itemBuilder: (context, index) =>
                   _FeedCard(item: items[index]),
             );

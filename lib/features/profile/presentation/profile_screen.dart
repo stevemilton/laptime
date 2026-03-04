@@ -20,6 +20,7 @@ import 'package:drift/drift.dart' show OrderingTerm;
 import '../../../core/database/app_database.dart';
 import '../../../core/utils/format_utils.dart';
 import '../../auth/presentation/auth_controller.dart';
+import '../../social/data/team_providers.dart';
 import '../data/profile_repository.dart';
 
 /// Profile provider - watches the current user's profile.
@@ -268,6 +269,19 @@ class ProfileScreen extends ConsumerWidget {
 
           const SizedBox(height: 24),
 
+          // Teams section
+          SectionHeader(
+            title: 'Teams',
+            trailing: SectionAction(
+              label: 'All',
+              onTap: () => context.push('/teams'),
+            ),
+          ),
+
+          _buildTeamsSection(context, ref),
+
+          const SizedBox(height: 24),
+
           // Recent sessions section
           SectionHeader(
             title: 'Recent Sessions',
@@ -318,6 +332,108 @@ class ProfileScreen extends ConsumerWidget {
           const SizedBox(height: 32),
         ],
       ),
+    );
+  }
+
+  Widget _buildTeamsSection(BuildContext context, WidgetRef ref) {
+    final teamsAsync = ref.watch(userTeamsProvider);
+
+    return teamsAsync.when(
+      data: (teams) {
+        if (teams.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: AppCard(
+              child: Row(
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: AppColors.purplePale,
+                      borderRadius: BorderRadius.circular(AppRadii.md),
+                    ),
+                    child: const Icon(
+                      LucideIcons.users,
+                      color: AppColors.purple,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Create or join a team',
+                      style: AppTypography.bodyMedium.copyWith(
+                        color: AppColors.textTertiary,
+                      ),
+                    ),
+                  ),
+                  const Icon(
+                    LucideIcons.plus,
+                    color: AppColors.purple,
+                    size: 20,
+                  ),
+                ],
+              ),
+              onTap: () => context.push('/team/create'),
+            ),
+          );
+        }
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            children: [
+              for (int i = 0; i < teams.length; i++) ...[
+                AppCard(
+                  onTap: () => context.push('/team/${teams[i].id}'),
+                  child: Row(
+                    children: [
+                      AppAvatar(
+                        imageUrl: teams[i].logoUrl,
+                        initials: teams[i].name.isNotEmpty
+                            ? teams[i].name[0].toUpperCase()
+                            : null,
+                        size: 40,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              teams[i].name,
+                              style: AppTypography.bodyMedium.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            Text(
+                              '${teams[i].memberCount} member${teams[i].memberCount == 1 ? '' : 's'}',
+                              style: AppTypography.bodySmall.copyWith(
+                                color: AppColors.textTertiary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(
+                        LucideIcons.chevronRight,
+                        size: 18,
+                        color: AppColors.textTertiary,
+                      ),
+                    ],
+                  ),
+                ),
+                if (i < teams.length - 1) const SizedBox(height: 8),
+              ],
+            ],
+          ),
+        );
+      },
+      loading: () => const Padding(
+        padding: EdgeInsets.all(24),
+        child: Center(child: CircularProgressIndicator()),
+      ),
+      error: (_, _) => const SizedBox.shrink(),
     );
   }
 

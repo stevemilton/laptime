@@ -325,6 +325,7 @@ class SyncService {
         const compositePkTables = {
           'team_members': ['team_id', 'user_id'],
           'crew_members': ['crew_id', 'user_id'],
+          'session_likes': ['session_id', 'user_id'],
         };
 
         if (compositePkTables.containsKey(table)) {

@@ -18,6 +18,8 @@ import 'tables/teams_table.dart';
 import 'tables/crews_table.dart';
 import 'tables/team_join_requests_table.dart';
 import 'tables/disclaimer_table.dart';
+import 'tables/session_likes_table.dart';
+import 'tables/session_comments_table.dart';
 import 'tables/sync_queue_table.dart';
 
 part 'app_database.g.dart';
@@ -38,6 +40,8 @@ part 'app_database.g.dart';
   LocalCrewMembers,
   LocalTeamJoinRequests,
   LocalDisclaimerAcceptances,
+  LocalSessionLikes,
+  LocalSessionComments,
   LocalSyncQueue,
 ])
 class AppDatabase extends _$AppDatabase {
@@ -47,7 +51,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration {
@@ -81,6 +85,11 @@ class AppDatabase extends _$AppDatabase {
           // Migrate 'owner' role to 'admin'
           await customStatement(
               "UPDATE local_team_members SET role = 'admin' WHERE role = 'owner'");
+        }
+        if (from < 5) {
+          // v5: Social feed — likes and comments
+          await m.createTable(localSessionLikes);
+          await m.createTable(localSessionComments);
         }
       },
     );
