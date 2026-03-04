@@ -18,6 +18,15 @@ import '../../social/data/team_providers.dart';
 import 'comment_sheet.dart';
 import 'sector_sheet.dart';
 
+/// Feed provider for the "Mine" tab — all of the current user's sessions.
+final mySessionsFeedProvider = FutureProvider<List<FeedItem>>((ref) async {
+  final user = ref.watch(currentUserProvider);
+  if (user == null) return [];
+  final client = ref.read(supabaseClientProvider);
+  final repo = FeedRepository(client);
+  return repo.getMySessions(userId: user.id);
+});
+
 /// Feed provider for the "Following" tab.
 final followingFeedProvider = FutureProvider<List<FeedItem>>((ref) async {
   final user = ref.watch(currentUserProvider);
@@ -49,7 +58,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
   }
 
   @override
@@ -89,6 +98,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
             indicatorColor: AppColors.purple,
             indicatorSize: TabBarIndicatorSize.label,
             tabs: const [
+              Tab(text: 'Mine'),
               Tab(text: 'Following'),
               Tab(text: 'Nearby'),
               Tab(text: 'Teams'),
@@ -100,6 +110,13 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
             child: TabBarView(
               controller: _tabController,
               children: [
+                _FeedList(
+                  feedProvider: mySessionsFeedProvider,
+                  emptyIcon: LucideIcons.timer,
+                  emptyTitle: 'No sessions yet',
+                  emptySubtitle:
+                      'Record your first track session to see it here.',
+                ),
                 _FeedList(feedProvider: followingFeedProvider),
                 _FeedList(feedProvider: nearbyFeedProvider),
                 const _TeamsFeedTab(),
@@ -113,9 +130,17 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
 }
 
 class _FeedList extends ConsumerWidget {
-  const _FeedList({required this.feedProvider});
+  const _FeedList({
+    required this.feedProvider,
+    this.emptyIcon,
+    this.emptyTitle,
+    this.emptySubtitle,
+  });
 
   final FutureProvider<List<FeedItem>> feedProvider;
+  final IconData? emptyIcon;
+  final String? emptyTitle;
+  final String? emptySubtitle;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -125,9 +150,9 @@ class _FeedList extends ConsumerWidget {
       data: (items) {
         if (items.isEmpty) {
           return EmptyState(
-            icon: LucideIcons.rss,
-            title: 'No sessions yet',
-            subtitle:
+            icon: emptyIcon ?? LucideIcons.rss,
+            title: emptyTitle ?? 'No sessions yet',
+            subtitle: emptySubtitle ??
                 'Record a session or follow other drivers to build your feed.',
           );
         }
@@ -312,6 +337,7 @@ class _LikePillState extends ConsumerState<_LikePill> {
       await repo.toggleLike(widget.item.sessionId, user.id);
 
       // Invalidate feed providers to refresh counts on next load
+      ref.invalidate(mySessionsFeedProvider);
       ref.invalidate(followingFeedProvider);
       ref.invalidate(nearbyFeedProvider);
     } catch (_) {
@@ -393,25 +419,60 @@ class _TeamsFeedTab extends ConsumerWidget {
           );
         }
 
-        // Has teams — show their feed
+        // Has teams — show their feed with manage link
         final feedAsync = ref.watch(teamsFeedProvider);
         return feedAsync.when(
           data: (items) {
             if (items.isEmpty) {
-              return const EmptyState(
+              return EmptyState(
                 icon: LucideIcons.rss,
                 title: 'No team sessions yet',
                 subtitle:
                     'Sessions from your teammates will appear here.',
+                actionLabel: 'Manage Teams',
+                onAction: () => context.push('/teams'),
               );
             }
 
             return ListView.separated(
               padding: const EdgeInsets.all(20),
-              itemCount: items.length,
+              itemCount: items.length + 1,
               separatorBuilder: (_, _) => const SizedBox(height: 12),
-              itemBuilder: (context, index) =>
-                  _FeedCard(item: items[index]),
+              itemBuilder: (context, index) {
+                // First item is a "Manage Teams" banner
+                if (index == 0) {
+                  return GestureDetector(
+                    onTap: () => context.push('/teams'),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: AppColors.purplePale,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(LucideIcons.users,
+                              size: 18, color: AppColors.purple),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Manage Teams & Invite Members',
+                              style: AppTypography.bodySmall.copyWith(
+                                color: AppColors.purple,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const Icon(LucideIcons.chevronRight,
+                              size: 16, color: AppColors.purple),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+                return _FeedCard(item: items[index - 1]);
+              },
             );
           },
           loading: () =>
