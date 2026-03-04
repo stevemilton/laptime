@@ -97,6 +97,7 @@ class SyncService {
   Timer? _periodicTimer;
   bool _isSyncing = false;
   bool _disposed = false;
+  bool _hasVerifiedBuckets = false;
 
   final _statusController = StreamController<SyncState>.broadcast();
 
@@ -162,6 +163,14 @@ class SyncService {
     _emitState(status: SyncStatus.syncing);
 
     try {
+      // On first authenticated sync pass, verify required storage buckets
+      // exist. Logs a prominent warning if a bucket is missing (most likely
+      // the storage migration was never applied).
+      if (!_hasVerifiedBuckets) {
+        await _verifyStorageBuckets();
+        _hasVerifiedBuckets = true;
+      }
+
       while (!_disposed) {
         final items = await _db.getPendingSyncItems(
           limit: _batchSize,
@@ -199,6 +208,28 @@ class SyncService {
     }
   }
 
+  /// Verify that required Supabase Storage buckets exist by attempting to
+  /// list their contents. Logs a clear warning for any missing bucket so
+  /// the developer knows to apply the storage migration.
+  Future<void> _verifyStorageBuckets() async {
+    const requiredBuckets = ['avatars', 'car-images', 'team-logos'];
+    for (final bucket in requiredBuckets) {
+      try {
+        // A minimal list call — returns empty list if the bucket is empty,
+        // throws StorageException if the bucket doesn't exist.
+        await _supabase.storage.from(bucket).list(path: '', searchOptions: const SearchOptions(limit: 1));
+      } catch (e) {
+        debugPrint(
+          '╔══════════════════════════════════════════════════════════╗\n'
+          '║  SYNC ERROR: Storage bucket "$bucket" is not accessible ║\n'
+          '║  Error: $e\n'
+          '║  Run the migration: 20260303_storage_and_car_columns.sql ║\n'
+          '╚══════════════════════════════════════════════════════════╝',
+        );
+      }
+    }
+  }
+
   /// Determine whether a queue item should be attempted right now.
   ///
   /// Items that have exceeded [maxRetries] are skipped. Items with a
@@ -219,6 +250,12 @@ class SyncService {
   }
 
   /// Process a single sync queue item.
+  ///
+  /// Image uploads and data upserts are decoupled: if an image upload fails
+  /// (e.g. Supabase Storage connectivity issue), the row data is still pushed
+  /// to the remote table — just without the image URL. The sync item stays in
+  /// the queue so the image upload is retried on the next pass. Once it
+  /// eventually succeeds, the remote row is updated with the public URL.
   Future<void> _processSingleItem(LocalSyncQueueData item) async {
     try {
       if (item.targetTable == 'lap_sensor_data' &&
@@ -228,38 +265,69 @@ class SyncService {
         final payload =
             jsonDecode(item.payloadJson) as Map<String, dynamic>;
 
-        // Upload any local image files before syncing to Supabase.
+        // Attempt to upload any local image files.
+        // Returns the list of field names whose upload failed.
+        var failedImageFields = const <String>[];
         if (item.operation != 'delete') {
-          await _uploadImageFields(
+          failedImageFields = await _uploadImageFields(
             table: item.targetTable,
             recordId: item.recordId,
             payload: payload,
           );
+
+          // Persist the payload with any successfully-uploaded public URLs
+          // so that retries don't re-upload from local paths that iOS may
+          // have cleaned up.
+          await _db.updateSyncPayload(item.id, jsonEncode(payload));
+        }
+
+        // Build the upsert payload. Strip fields that still hold a local
+        // file path — we never want device-specific paths in the remote DB.
+        final upsertPayload = Map<String, dynamic>.from(payload);
+        for (final field in failedImageFields) {
+          upsertPayload.remove(field);
         }
 
         await _executeOperation(
           table: item.targetTable,
           operation: item.operation,
           recordId: item.recordId,
-          payload: payload,
+          payload: upsertPayload,
         );
+
+        if (failedImageFields.isNotEmpty) {
+          // Row data synced, but one or more images couldn't upload.
+          // Keep the item in the queue so the image upload is retried.
+          debugPrint(
+            'SyncService: data synced for ${item.targetTable}/${item.recordId} '
+            'but image upload failed for $failedImageFields — will retry',
+          );
+          await _db.markSyncFailed(
+            item.id,
+            'Image upload pending for: $failedImageFields',
+          );
+          return;
+        }
       }
 
       await _db.markSyncCompleted(item.id);
-    } catch (e) {
+    } catch (e, stack) {
       debugPrint(
         'SyncService: failed to sync item ${item.id} '
-        '(${item.targetTable}/${item.operation}): $e',
+        '(${item.targetTable}/${item.operation}): $e\n$stack',
       );
       await _db.markSyncFailed(item.id, e.toString());
     }
   }
 
-  /// For each known image field in [payload], if the value is a local file
-  /// path (not an http URL), upload it to Supabase Storage and replace the
-  /// value with the public URL. Also updates the local Drift record so the
-  /// UI reactively picks up the remote URL.
-  Future<void> _uploadImageFields({
+  /// Attempt to upload local image files referenced in [payload] to Supabase
+  /// Storage. For each image that uploads successfully the local path in
+  /// [payload] is replaced with the public URL **in-place** and the local
+  /// Drift record is updated.
+  ///
+  /// Returns the list of field names whose upload **failed**. An empty list
+  /// means all images (if any) were uploaded successfully.
+  Future<List<String>> _uploadImageFields({
     required String table,
     required String recordId,
     required Map<String, dynamic> payload,
@@ -269,33 +337,54 @@ class SyncService {
       throw StateError('Cannot upload images without authenticated user');
     }
 
+    final failedFields = <String>[];
+
     for (final field in ImageUploadService.imageFields) {
       final value = payload[field] as String?;
       if (!ImageUploadService.isLocalPath(value)) continue;
 
+      debugPrint(
+        'SyncService: detected local image for $table.$field = $value',
+      );
+
       final bucket = ImageUploadService.bucketFor(table, field);
-      if (bucket == null) continue;
+      if (bucket == null) {
+        debugPrint(
+          'SyncService: no bucket mapping for $table:$field — skipping',
+        );
+        continue;
+      }
 
-      final storagePath =
-          ImageUploadService.buildStoragePath(userId, recordId, value!);
+      try {
+        final storagePath =
+            ImageUploadService.buildStoragePath(userId, recordId, value!);
 
-      final publicUrl = await _imageUpload.uploadFile(
-        localPath: value,
-        bucket: bucket,
-        storagePath: storagePath,
-      );
+        final publicUrl = await _imageUpload.uploadFile(
+          localPath: value,
+          bucket: bucket,
+          storagePath: storagePath,
+        );
 
-      // Replace local path with public URL in the outgoing payload.
-      payload[field] = publicUrl;
+        // Replace local path with public URL in the outgoing payload.
+        payload[field] = publicUrl;
 
-      // Update the local Drift record so the UI shows the remote URL.
-      await _updateLocalImageUrl(
-        table: table,
-        recordId: recordId,
-        field: field,
-        url: publicUrl,
-      );
+        // Update the local Drift record so the UI shows the remote URL.
+        await _updateLocalImageUrl(
+          table: table,
+          recordId: recordId,
+          field: field,
+          url: publicUrl,
+        );
+      } catch (e) {
+        debugPrint(
+          'SyncService: image upload FAILED for $table.$field: $e — '
+          'data will sync without image, upload will retry next pass',
+        );
+        failedFields.add(field);
+      }
     }
+
+    return failedFields;
   }
 
   /// Writes the uploaded public URL back to the local Drift record.
@@ -321,6 +410,14 @@ class SyncService {
     }
   }
 
+  /// Composite-PK tables don't have a single 'id' column.
+  /// Use payload fields for update/delete filters instead.
+  static const _compositePkTables = {
+    'team_members': ['team_id', 'user_id'],
+    'crew_members': ['crew_id', 'user_id'],
+    'session_likes': ['session_id', 'user_id'],
+  };
+
   /// Execute a single Supabase operation (insert/update/delete).
   Future<void> _executeOperation({
     required String table,
@@ -330,20 +427,32 @@ class SyncService {
   }) async {
     switch (operation) {
       case 'insert':
-      case 'update':
         await _supabase.from(table).upsert(payload);
+      case 'update':
+        // Use update (not upsert) for update operations. Upsert generates
+        // INSERT ... ON CONFLICT DO UPDATE which requires all NOT NULL columns
+        // in the INSERT portion. Update payloads only include changed fields,
+        // so the INSERT would fail with a NOT NULL constraint violation
+        // (e.g. cars.user_id is NOT NULL but not in the update payload).
+        if (_compositePkTables.containsKey(table)) {
+          var query = _supabase.from(table).update(payload);
+          for (final col in _compositePkTables[table]!) {
+            final value = payload[col];
+            if (value == null) {
+              throw StateError(
+                'Missing composite PK field "$col" in payload for $table update',
+              );
+            }
+            query = query.eq(col, value);
+          }
+          await query;
+        } else {
+          await _supabase.from(table).update(payload).eq('id', recordId);
+        }
       case 'delete':
-        // Composite-PK tables don't have a single 'id' column.
-        // Use payload fields for the delete filter instead.
-        const compositePkTables = {
-          'team_members': ['team_id', 'user_id'],
-          'crew_members': ['crew_id', 'user_id'],
-          'session_likes': ['session_id', 'user_id'],
-        };
-
-        if (compositePkTables.containsKey(table)) {
+        if (_compositePkTables.containsKey(table)) {
           var query = _supabase.from(table).delete();
-          for (final col in compositePkTables[table]!) {
+          for (final col in _compositePkTables[table]!) {
             final value = payload[col];
             if (value == null) {
               throw StateError(

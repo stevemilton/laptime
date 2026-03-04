@@ -128,6 +128,15 @@ class AppDatabase extends _$AppDatabase {
     return (delete(localSyncQueue)..where((t) => t.id.equals(queueId))).go();
   }
 
+  /// Persist an updated payload (e.g. after replacing local image paths with
+  /// public URLs). This prevents retries from re-uploading local files that
+  /// may have been cleaned up by the OS.
+  Future<void> updateSyncPayload(int queueId, String payloadJson) {
+    return (update(localSyncQueue)..where((t) => t.id.equals(queueId))).write(
+      LocalSyncQueueCompanion(payloadJson: Value(payloadJson)),
+    );
+  }
+
   Future<void> markSyncFailed(int queueId, String error) async {
     await transaction(() async {
       final item = await (select(localSyncQueue)
