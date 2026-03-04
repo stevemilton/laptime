@@ -1,7 +1,7 @@
 name: laptime
 description: "Strava for track days. Record GPS traces, phone telemetry, and weather at amateur motorsport events."
 publish_to: 'none'
-version: 0.1.0+19
+version: 0.1.0+21
 
 environment:
   sdk: ^3.11.0
@@ -57,6 +57,9 @@ dependencies:
   # Serialization
   freezed_annotation: ^2.4.4
   json_annotation: ^4.9.0
+
+  # Crypto (Apple Sign-In nonce)
+  crypto: ^3.0.6
 
   # Utils
   uuid: ^4.5.1

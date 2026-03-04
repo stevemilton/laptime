@@ -12,6 +12,7 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/format_utils.dart';
 import '../../../core/widgets/widgets.dart';
+import '../../../features/settings/presentation/settings_screen.dart';
 import '../../telemetry/data/telemetry_processor.dart';
 import '../../telemetry/presentation/telemetry_chart.dart';
 import '../data/session_repository.dart';
@@ -269,15 +270,16 @@ class _LapDetailScreenState extends ConsumerState<LapDetailScreen> {
   Widget _buildWeatherStrip(String weatherJson) {
     try {
       final data = jsonDecode(weatherJson) as Map<String, dynamic>;
+      final units = ref.watch(unitsProvider);
       final temp = data['temp'] is num
-          ? FormatUtils.formatTemp((data['temp'] as num).toDouble())
+          ? FormatUtils.formatTemp((data['temp'] as num).toDouble(), units: units)
           : null;
       final windSpeed = data['wind_speed'] is num
           ? FormatUtils.formatWindSpeed(
-              (data['wind_speed'] as num).toDouble())
+              (data['wind_speed'] as num).toDouble(), units: units)
           : null;
       final pressure = data['pressure'] is num
-          ? '${(data['pressure'] as num).round()} hPa'
+          ? FormatUtils.formatPressure((data['pressure'] as num).toDouble(), units: units)
           : null;
       final humidity = data['humidity'] is num
           ? '${(data['humidity'] as num).round()}%'

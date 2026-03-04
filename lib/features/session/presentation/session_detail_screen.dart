@@ -11,6 +11,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/format_utils.dart';
 import '../../../core/widgets/widgets.dart';
+import '../../../features/settings/presentation/settings_screen.dart';
 import '../data/session_repository.dart';
 
 /// Session detail view.
@@ -250,10 +251,11 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
         humid = (m['humidity'] as num?)?.toInt();
       }
 
+      final units = ref.watch(unitsProvider);
       return WeatherStrip(
-        temperature: temp != null ? FormatUtils.formatTemp(temp) : null,
-        windSpeed: wind != null ? FormatUtils.formatWindSpeed(wind) : null,
-        pressure: press != null ? '${press.round()} hPa' : null,
+        temperature: temp != null ? FormatUtils.formatTemp(temp, units: units) : null,
+        windSpeed: wind != null ? FormatUtils.formatWindSpeed(wind, units: units) : null,
+        pressure: press != null ? FormatUtils.formatPressure(press, units: units) : null,
         trackCondition: humid != null ? '$humid%' : null,
       );
     } catch (_) {

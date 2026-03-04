@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 
@@ -32,6 +33,11 @@ class SensorReading {
 /// - Gyroscope at ~50Hz (yaw/pitch/roll rate)
 /// - Magnetometer at ~10Hz (heading reference)
 /// - Barometer at ~1Hz (altitude reference / weather)
+///
+/// All sensor data is aligned to the accelerometer timestamps using
+/// nearest-sample interpolation. The accel stream defines the master timeline;
+/// gyro/mag/baro values are held at their latest reading and sampled whenever
+/// an accel event fires.
 class SensorService {
   StreamSubscription<AccelerometerEvent>? _accelSub;
   StreamSubscription<GyroscopeEvent>? _gyroSub;
@@ -40,7 +46,12 @@ class SensorService {
 
   DateTime? _sessionStart;
 
-  // Buffers for the current lap
+  // Latest readings from each sensor (used for alignment)
+  double _latestGyroX = 0, _latestGyroY = 0, _latestGyroZ = 0;
+  double _latestMagHeading = 0;
+  double _latestBaroPressure = 0;
+
+  // Aligned buffers for the current lap (all same length, keyed to accel timestamps)
   final List<double> timestamps = [];
   final List<double> accelX = [];
   final List<double> accelY = [];
@@ -61,46 +72,52 @@ class SensorService {
     _sessionStart = DateTime.now();
     _clearBuffers();
 
-    // Accelerometer at ~50Hz (20ms interval)
+    // Accelerometer at ~50Hz (20ms interval) — master timeline
     _accelSub = accelerometerEventStream(
       samplingPeriod: const Duration(milliseconds: 20),
     ).listen((event) {
       final ts = _elapsedSeconds();
+
+      // Record aligned data: accel is the master, others use latest values
       timestamps.add(ts);
       accelX.add(event.x);
       accelY.add(event.y);
       accelZ.add(event.z);
+      gyroX.add(_latestGyroX);
+      gyroY.add(_latestGyroY);
+      gyroZ.add(_latestGyroZ);
+      magHeading.add(_latestMagHeading);
+      baroPressure.add(_latestBaroPressure);
+
       lastAccelX = event.x;
       lastAccelY = event.y;
       lastAccelZ = event.z;
     }, onError: (e) => debugPrint('Accel error: $e'));
 
-    // Gyroscope at ~50Hz
+    // Gyroscope at ~50Hz — updates latest values
     _gyroSub = gyroscopeEventStream(
       samplingPeriod: const Duration(milliseconds: 20),
     ).listen((event) {
-      gyroX.add(event.x);
-      gyroY.add(event.y);
-      gyroZ.add(event.z);
+      _latestGyroX = event.x;
+      _latestGyroY = event.y;
+      _latestGyroZ = event.z;
       lastGyroX = event.x;
       lastGyroY = event.y;
       lastGyroZ = event.z;
     }, onError: (e) => debugPrint('Gyro error: $e'));
 
-    // Magnetometer at ~10Hz
+    // Magnetometer at ~10Hz — updates latest heading
     _magSub = magnetometerEventStream(
       samplingPeriod: const Duration(milliseconds: 100),
     ).listen((event) {
-      // Compute heading from magnetometer
-      final heading = _computeHeading(event.x, event.y);
-      magHeading.add(heading);
+      _latestMagHeading = _computeHeading(event.x, event.y);
     }, onError: (e) => debugPrint('Mag error: $e'));
 
-    // Barometer at ~1Hz
+    // Barometer at ~1Hz — updates latest pressure
     _baroSub = barometerEventStream(
       samplingPeriod: const Duration(seconds: 1),
     ).listen((event) {
-      baroPressure.add(event.pressure);
+      _latestBaroPressure = event.pressure;
       lastPressure = event.pressure;
     }, onError: (e) => debugPrint('Baro error: $e'));
   }
@@ -154,32 +171,24 @@ class SensorService {
     gyroZ.clear();
     magHeading.clear();
     baroPressure.clear();
+    _latestGyroX = 0;
+    _latestGyroY = 0;
+    _latestGyroZ = 0;
+    _latestMagHeading = 0;
+    _latestBaroPressure = 0;
   }
 
   /// Compute magnetic heading from x/y magnetometer readings.
   double _computeHeading(double x, double y) {
-    final heading = (180.0 * (3.14159265 - _atan2(y, x)) / 3.14159265);
+    final heading = (180.0 * (pi - atan2(y, x)) / pi);
     return heading < 0 ? heading + 360 : heading;
-  }
-
-  /// Simple atan2 implementation for heading calculation.
-  double _atan2(double y, double x) {
-    if (x > 0) return _atan(y / x);
-    if (x < 0 && y >= 0) return _atan(y / x) + 3.14159265;
-    if (x < 0 && y < 0) return _atan(y / x) - 3.14159265;
-    if (x == 0 && y > 0) return 3.14159265 / 2;
-    if (x == 0 && y < 0) return -3.14159265 / 2;
-    return 0;
-  }
-
-  double _atan(double x) {
-    // Use dart:math atan via a simple import-free approximation
-    // In production this uses dart:math, but we use this for simplicity
-    return x - (x * x * x) / 3 + (x * x * x * x * x) / 5;
   }
 }
 
 /// Snapshot of sensor data for one lap.
+///
+/// All arrays are guaranteed to be the same length, aligned to accelerometer
+/// timestamps.
 class LapSensorSnapshot {
   LapSensorSnapshot({
     required this.timestamps,

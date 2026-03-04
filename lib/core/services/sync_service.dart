@@ -150,15 +150,25 @@ class SyncService {
 
   Future<void> _processQueue() async {
     if (_isSyncing || _disposed) return;
-    _isSyncing = true;
 
+    // Don't process if user is not authenticated — would burn retry attempts.
+    final session = _supabase.auth.currentSession;
+    if (session == null) {
+      debugPrint('SyncService: skipping sync — no active auth session');
+      return;
+    }
+
+    _isSyncing = true;
     _emitState(status: SyncStatus.syncing);
 
     try {
       while (!_disposed) {
-        final items = await _db.getPendingSyncItems(limit: _batchSize);
+        final items = await _db.getPendingSyncItems(
+          limit: _batchSize,
+          maxRetries: maxRetries,
+        );
 
-        // Filter to only items that are eligible for retry.
+        // Filter to only items that are eligible for retry (backoff).
         final eligible = items.where(_isEligibleForRetry).toList();
         if (eligible.isEmpty) break;
 
@@ -169,13 +179,14 @@ class SyncService {
       }
 
       // After processing, update the pending count.
-      final remaining = await _db.getPendingSyncItems(limit: _batchSize);
-      final stillPending =
-          remaining.where((i) => i.retryCount < maxRetries).length;
+      final remaining = await _db.getPendingSyncItems(
+        limit: _batchSize,
+        maxRetries: maxRetries,
+      );
 
       _emitState(
         status: SyncStatus.idle,
-        pendingCount: stillPending,
+        pendingCount: remaining.length,
       );
     } catch (e) {
       debugPrint('SyncService: queue processing error: $e');
@@ -254,7 +265,9 @@ class SyncService {
     required Map<String, dynamic> payload,
   }) async {
     final userId = _supabase.auth.currentUser?.id;
-    if (userId == null) return;
+    if (userId == null) {
+      throw StateError('Cannot upload images without authenticated user');
+    }
 
     for (final field in ImageUploadService.imageFields) {
       final value = payload[field] as String?;

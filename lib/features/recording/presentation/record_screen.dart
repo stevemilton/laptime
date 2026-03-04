@@ -18,6 +18,7 @@ import '../../../core/services/weather_service.dart';
 import '../../../core/utils/format_utils.dart';
 import '../../../core/widgets/weather_strip.dart';
 import '../../../core/widgets/gps_indicator.dart';
+import '../../../features/settings/presentation/settings_screen.dart';
 import 'recording_controller.dart';
 
 /// Provider for the most recent session.
@@ -295,12 +296,13 @@ class _RecordScreenState extends ConsumerState<RecordScreen>
       );
     }
 
+    final units = ref.watch(unitsProvider);
     return WeatherStrip(
-      temperature: FormatUtils.formatTemp(w.tempCelsius),
+      temperature: FormatUtils.formatTemp(w.tempCelsius, units: units),
       trackCondition: w.suggestedTrackCondition.substring(0, 1).toUpperCase() +
           w.suggestedTrackCondition.substring(1),
-      windSpeed: FormatUtils.formatWindSpeed(w.windSpeed),
-      pressure: '${w.pressure.round()} hPa',
+      windSpeed: FormatUtils.formatWindSpeed(w.windSpeed, units: units),
+      pressure: FormatUtils.formatPressure(w.pressure, units: units),
     );
   }
 

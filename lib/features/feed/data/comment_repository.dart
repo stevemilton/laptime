@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:drift/drift.dart';
+import 'package:drift/drift.dart' show OrderingTerm, Value;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
@@ -84,8 +84,19 @@ class CommentRepository {
     );
   }
 
-  /// Fetch comments for a session from Supabase (with profile data).
+  /// Fetch comments for a session.
+  ///
+  /// Merges server results with unsynced local comments so newly posted
+  /// comments appear immediately without waiting for sync.
   Future<List<CommentItem>> getSessionComments(String sessionId) async {
+    // Always read local comments first (instant, offline-safe)
+    final localComments = await (_db.select(_db.localSessionComments)
+          ..where((t) => t.sessionId.equals(sessionId))
+          ..orderBy([(t) => OrderingTerm.asc(t.createdAt)]))
+        .get();
+
+    // Try to fetch from server for other users' comments
+    List<CommentItem> serverComments = [];
     try {
       final response = await _client
           .from('session_comments')
@@ -93,7 +104,7 @@ class CommentRepository {
           .eq('session_id', sessionId)
           .order('created_at', ascending: true);
 
-      return (response as List).map((json) {
+      serverComments = (response as List).map((json) {
         return CommentItem(
           id: json['id'] as String,
           sessionId: json['session_id'] as String,
@@ -105,8 +116,34 @@ class CommentRepository {
           createdAt: DateTime.parse(json['created_at'] as String),
         );
       }).toList();
-    } catch (e) {
-      return [];
+    } catch (_) {
+      // Offline — fall through to local-only results
     }
+
+    // Merge: use server comments as base, add any local comments not yet on server
+    final serverIds = serverComments.map((c) => c.id).toSet();
+    final localOnly = localComments.where((lc) => !serverIds.contains(lc.id));
+
+    // Convert local-only comments to CommentItem (no profile join, use userId)
+    final localProfile = await _db.getProfile(
+      localComments.isNotEmpty ? localComments.first.userId : '',
+    );
+
+    final merged = [
+      ...serverComments,
+      for (final lc in localOnly)
+        CommentItem(
+          id: lc.id,
+          sessionId: lc.sessionId,
+          userId: lc.userId,
+          displayName: localProfile?.displayName ?? 'You',
+          avatarUrl: localProfile?.avatarUrl,
+          body: lc.body,
+          createdAt: lc.createdAt,
+        ),
+    ];
+
+    merged.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    return merged;
   }
 }

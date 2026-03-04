@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -14,6 +13,7 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/supabase_provider.dart';
+import '../../../core/providers/sync_provider.dart';
 import '../data/car_repository.dart';
 
 /// Form screen for creating or editing a car/kart in the garage.
@@ -684,6 +684,9 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
         );
         debugPrint('[CarSave] Create complete');
       }
+
+      // Trigger immediate sync so images upload right away.
+      ref.read(syncServiceProvider).requestSync();
 
       debugPrint('[CarSave] Navigating back');
       if (mounted) {

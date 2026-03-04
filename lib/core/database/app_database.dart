@@ -113,8 +113,12 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
-  Future<List<LocalSyncQueueData>> getPendingSyncItems({int limit = 50}) {
+  Future<List<LocalSyncQueueData>> getPendingSyncItems({
+    int limit = 50,
+    int maxRetries = 5,
+  }) {
     return (select(localSyncQueue)
+          ..where((t) => t.retryCount.isSmallerThanValue(maxRetries))
           ..orderBy([(t) => OrderingTerm.asc(t.createdAt)])
           ..limit(limit))
         .get();
@@ -125,19 +129,20 @@ class AppDatabase extends _$AppDatabase {
   }
 
   Future<void> markSyncFailed(int queueId, String error) async {
-    // Read current retry count, then write incremented value
-    final item = await (select(localSyncQueue)
-          ..where((t) => t.id.equals(queueId)))
-        .getSingleOrNull();
-    if (item == null) return;
+    await transaction(() async {
+      final item = await (select(localSyncQueue)
+            ..where((t) => t.id.equals(queueId)))
+          .getSingleOrNull();
+      if (item == null) return;
 
-    await (update(localSyncQueue)..where((t) => t.id.equals(queueId))).write(
-      LocalSyncQueueCompanion(
-        retryCount: Value(item.retryCount + 1),
-        lastAttemptedAt: Value(DateTime.now()),
-        errorMessage: Value(error),
-      ),
-    );
+      await (update(localSyncQueue)..where((t) => t.id.equals(queueId))).write(
+        LocalSyncQueueCompanion(
+          retryCount: Value(item.retryCount + 1),
+          lastAttemptedAt: Value(DateTime.now()),
+          errorMessage: Value(error),
+        ),
+      );
+    });
   }
 
   // ── Profile helpers ──

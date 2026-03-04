@@ -97,6 +97,7 @@ class RecordingRepository {
   int _lapCount = 0;
   int? _lastLapMs;
   int? _bestLapMs;
+  int? _circuitBestMs; // All-time best at this circuit for this user
   WeatherData? _weather;
 
   // GPS trace for current lap
@@ -138,8 +139,14 @@ class RecordingRepository {
     _lapCount = 0;
     _lastLapMs = null;
     _bestLapMs = null;
+    _circuitBestMs = null;
     _currentLapPoints.clear();
     _allPoints.clear();
+
+    // Load all-time best lap at this circuit for accurate PB detection
+    if (circuitId != null) {
+      _circuitBestMs = await _loadCircuitBest(userId, circuitId);
+    }
 
     // Write session to local DB
     await _db.into(_db.localSessions).insert(
@@ -189,7 +196,7 @@ class RecordingRepository {
   }
 
   /// Stop recording and finalize the session.
-  Future<String?> stopSession() async {
+  Future<String?> stopSession({bool isPublic = true}) async {
     if (_sessionId == null) return null;
 
     final sessionId = _sessionId!;
@@ -222,7 +229,7 @@ class RecordingRepository {
           'car_id': session.carId,
           'circuit_id': session.circuitId,
           'weather_json': _weather?.toJson(),
-          'is_public': true,
+          'is_public': isPublic,
         }),
       );
     }
@@ -261,10 +268,15 @@ class RecordingRepository {
     _lapCount++;
     final durationMs = crossingTime.difference(_lapStart!).inMilliseconds;
 
-    // Track best lap
-    final isPB = _bestLapMs == null || durationMs < _bestLapMs!;
-    if (isPB) _bestLapMs = durationMs;
+    // Track session-best for UI display
+    if (_bestLapMs == null || durationMs < _bestLapMs!) {
+      _bestLapMs = durationMs;
+    }
     _lastLapMs = durationMs;
+
+    // Determine if this is a circuit-wide personal best (not just session-best)
+    final isPB = _circuitBestMs == null || durationMs < _circuitBestMs!;
+    if (isPB) _circuitBestMs = durationMs;
 
     final lapId = _uuid.v4();
 
@@ -298,7 +310,7 @@ class RecordingRepository {
       ),
     );
 
-    // Enqueue lap for sync
+    // Enqueue lap for sync (include trace for sectors/leaderboards/maps)
     await _db.enqueueSync(
       targetTable: 'laps',
       operation: 'insert',
@@ -309,13 +321,60 @@ class RecordingRepository {
         'lap_number': _lapCount,
         'duration_ms': durationMs,
         'is_personal_best': isPB,
+        'trace_json': GeoUtils.encodeTrace(_currentLapPoints),
       }),
     );
+
+    // Enqueue sensor data for sync (telemetry needs to be accessible cross-device)
+    final sensorId = sensorSnapshot.timestamps.isNotEmpty
+        ? '${lapId}_sensors'
+        : null;
+    if (sensorId != null) {
+      await _db.enqueueSync(
+        targetTable: 'lap_sensor_data',
+        operation: 'insert',
+        recordId: sensorId,
+        payloadJson: jsonEncode({
+          'id': sensorId,
+          'lap_id': lapId,
+          'timestamps_json': sensorSnapshot.timestamps,
+          'accel_x_json': sensorSnapshot.accelX,
+          'accel_y_json': sensorSnapshot.accelY,
+          'accel_z_json': sensorSnapshot.accelZ,
+          'gyro_x_json': sensorSnapshot.gyroX,
+          'gyro_y_json': sensorSnapshot.gyroY,
+          'gyro_z_json': sensorSnapshot.gyroZ,
+          'baro_pressure_json': sensorSnapshot.baroPressure,
+          'mag_heading_json': sensorSnapshot.magHeading,
+        }),
+      );
+    }
 
     // Reset for next lap
     _currentLapPoints.clear();
     _lapStart = crossingTime;
     _emitState();
+  }
+
+  /// Load the all-time best lap duration at a circuit for this user.
+  Future<int?> _loadCircuitBest(String userId, String circuitId) async {
+    final sessions = await (_db.select(_db.localSessions)
+          ..where((t) =>
+              t.userId.equals(userId) & t.circuitId.equals(circuitId)))
+        .get();
+
+    if (sessions.isEmpty) return null;
+
+    int? best;
+    for (final session in sessions) {
+      final laps = await _db.getSessionLaps(session.id);
+      for (final lap in laps) {
+        if (best == null || lap.durationMs < best) {
+          best = lap.durationMs;
+        }
+      }
+    }
+    return best;
   }
 
   /// Fetch weather data at the current GPS position.

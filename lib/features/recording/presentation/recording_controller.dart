@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/supabase_provider.dart';
+import '../../../core/providers/sync_provider.dart';
+import '../../../features/settings/presentation/settings_screen.dart';
 import '../data/recording_repository.dart';
 
 /// Provider for the recording repository.
@@ -56,7 +58,13 @@ class RecordingController extends StateNotifier<AsyncValue<void>> {
   Future<String?> stopSession() async {
     state = const AsyncLoading();
     try {
-      final sessionId = await _repo.stopSession();
+      final privacy = _ref.read(defaultPrivacyProvider);
+      final isPublic = privacy != 'Private';
+      final sessionId = await _repo.stopSession(isPublic: isPublic);
+
+      // Trigger immediate sync so session + laps + sensor data upload promptly.
+      _ref.read(syncServiceProvider).requestSync();
+
       state = const AsyncData(null);
       return sessionId;
     } catch (e, st) {

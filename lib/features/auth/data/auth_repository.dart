@@ -1,7 +1,29 @@
+import 'dart:convert';
+import 'dart:math' as math;
+
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+
+import '../../../core/constants/env.dart';
+
+/// Generate a cryptographically secure random nonce.
+String _generateNonce([int length = 32]) {
+  const charset =
+      '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
+  final random = math.Random.secure();
+  return List.generate(length, (_) => charset[random.nextInt(charset.length)])
+      .join();
+}
+
+/// SHA-256 hash a string.
+String _sha256ofString(String input) {
+  final bytes = utf8.encode(input);
+  final digest = sha256.convert(bytes);
+  return digest.toString();
+}
 
 /// Repository handling all authentication operations via Supabase Auth.
 ///
@@ -20,11 +42,15 @@ class AuthRepository {
   // ── Apple Sign-In ──
 
   Future<AuthResponse> signInWithApple() async {
+    final rawNonce = _generateNonce();
+    final hashedNonce = _sha256ofString(rawNonce);
+
     final credential = await SignInWithApple.getAppleIDCredential(
       scopes: [
         AppleIDAuthorizationScopes.email,
         AppleIDAuthorizationScopes.fullName,
       ],
+      nonce: hashedNonce,
     );
 
     final idToken = credential.identityToken;
@@ -35,17 +61,15 @@ class AuthRepository {
     return _client.auth.signInWithIdToken(
       provider: OAuthProvider.apple,
       idToken: idToken,
-      nonce: '', // Supabase handles nonce verification internally
+      nonce: rawNonce,
     );
   }
 
   // ── Google Sign-In ──
 
   Future<AuthResponse> signInWithGoogle() async {
-    // iOS client ID from GoogleService-Info.plist
-    const iosClientId = String.fromEnvironment('GOOGLE_IOS_CLIENT_ID');
-    // Web client ID for Supabase OAuth
-    const webClientId = String.fromEnvironment('GOOGLE_WEB_CLIENT_ID');
+    final iosClientId = Env.googleIosClientId;
+    final webClientId = Env.googleWebClientId;
 
     final googleSignIn = GoogleSignIn(
       clientId: iosClientId.isNotEmpty ? iosClientId : null,

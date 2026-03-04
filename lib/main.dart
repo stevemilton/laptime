@@ -23,10 +23,11 @@ void main() async {
 
   // Initialize Supabase
   // URL and key MUST be provided via --dart-define at build time
-  assert(
-    Env.supabaseUrl.isNotEmpty && Env.supabaseAnonKey.isNotEmpty,
-    'SUPABASE_URL and SUPABASE_ANON_KEY must be set via --dart-define',
-  );
+  if (Env.supabaseUrl.isEmpty || Env.supabaseAnonKey.isEmpty) {
+    throw StateError(
+      'SUPABASE_URL and SUPABASE_ANON_KEY must be set via --dart-define',
+    );
+  }
   await Supabase.initialize(
     url: Env.supabaseUrl,
     anonKey: Env.supabaseAnonKey,
