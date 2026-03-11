@@ -9,6 +9,7 @@ import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/app_avatar.dart';
 import '../../../core/widgets/app_pill.dart';
 import '../../../core/widgets/empty_state.dart';
+import '../../../core/constants/role_constants.dart';
 import '../data/team_providers.dart';
 import '../data/team_repository.dart';
 
@@ -63,10 +64,11 @@ class _TeamSearchScreenState extends ConsumerState<TeamSearchScreen>
         context.pop();
       }
     } catch (e) {
+      debugPrint('[TeamSearch] Failed to join by code: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$e'),
+          const SnackBar(
+            content: Text('Could not join team. Please check the code and try again.'),
             backgroundColor: AppColors.red,
           ),
         );
@@ -132,10 +134,11 @@ class _TeamSearchScreenState extends ConsumerState<TeamSearchScreen>
                     });
                   }
                 } catch (e) {
+                  debugPrint('[TeamSearch] Failed to send join request: $e');
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('$e'),
+                      const SnackBar(
+                        content: Text('Could not send join request. Please try again.'),
                         backgroundColor: AppColors.red,
                       ),
                     );
@@ -370,18 +373,22 @@ class _SearchResults extends ConsumerWidget {
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('Error: $e')),
+      error: (_, __) => const EmptyState(
+        icon: LucideIcons.alertCircle,
+        title: 'Search failed',
+        subtitle: 'Could not search teams. Please try again.',
+      ),
     );
   }
 
   Widget _buildAction(TeamSearchResult team) {
-    if (team.membershipStatus == 'member') {
+    if (team.membershipStatus == MembershipStatus.member) {
       return AppPill.filled(
         label: 'Member',
         backgroundColor: AppColors.green,
       );
     }
-    if (team.membershipStatus == 'pending') {
+    if (team.membershipStatus == MembershipStatus.pending) {
       return AppPill.ghost(label: 'Pending');
     }
     return AppPill.outlined(

@@ -11,9 +11,10 @@ import 'package:path/path.dart' as p;
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/supabase_provider.dart';
 import '../../../core/providers/sync_provider.dart';
+import '../../../core/utils/image_utils.dart';
+import '../../../core/widgets/section_header.dart';
 import '../data/car_repository.dart';
 
 /// Form screen for creating or editing a car/kart in the garage.
@@ -75,24 +76,34 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
   }
 
   Future<void> _loadCar() async {
-    final db = ref.read(databaseProvider);
-    final repo = CarRepository(db);
-    final car = await repo.getCar(widget.carId!);
-    if (car != null && mounted) {
-      setState(() {
-        _makeController.text = car.make;
-        _modelController.text = car.model;
-        _yearController.text = car.year?.toString() ?? '';
-        _colourController.text = car.colour ?? '';
-        _powerController.text = car.powerHp?.toString() ?? '';
-        _weightController.text = car.weightKg?.toString() ?? '';
-        _engineCapacityController.text = car.engineCapacity ?? '';
-        _modificationsController.text = car.modifications ?? '';
-        _tyreSetupController.text = car.tyreSetup ?? '';
-        _selectedClass = car.carClass;
-        _selectedDrivetrain = car.drivetrain;
-        _imageUrl = car.imageUrl;
-      });
+    try {
+      final repo = ref.read(carRepositoryProvider);
+      final car = await repo.getCar(widget.carId!);
+      if (car != null && mounted) {
+        setState(() {
+          _makeController.text = car.make;
+          _modelController.text = car.model;
+          _yearController.text = car.year?.toString() ?? '';
+          _colourController.text = car.colour ?? '';
+          _powerController.text = car.powerHp?.toString() ?? '';
+          _weightController.text = car.weightKg?.toString() ?? '';
+          _engineCapacityController.text = car.engineCapacity ?? '';
+          _modificationsController.text = car.modifications ?? '';
+          _tyreSetupController.text = car.tyreSetup ?? '';
+          _selectedClass = car.carClass;
+          _selectedDrivetrain = car.drivetrain;
+          _imageUrl = car.imageUrl;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not load vehicle details. Please try again.'),
+            backgroundColor: AppColors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -146,7 +157,7 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
             const SizedBox(height: 24),
 
             // ── Basic Info ──
-            _buildSectionLabel('BASIC INFO'),
+            SectionHeader(title: 'BASIC INFO', padding: EdgeInsets.zero),
             const SizedBox(height: 12),
 
             // Class (moved to top so kart logic works)
@@ -224,14 +235,14 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
             const SizedBox(height: 28),
 
             // ── Performance Specs ──
-            _buildSectionLabel('PERFORMANCE'),
+            SectionHeader(title: 'PERFORMANCE', padding: EdgeInsets.zero),
             const SizedBox(height: 12),
 
             // Engine capacity
             TextFormField(
               controller: _engineCapacityController,
               decoration: InputDecoration(
-                labelText: _isKart ? 'Engine' : 'Engine',
+                labelText: _isKart ? 'Engine Package' : 'Engine',
                 hintText: _isKart
                     ? 'e.g. Rotax 125, IAME X30'
                     : 'e.g. 4.0L flat-six',
@@ -289,7 +300,7 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
             const SizedBox(height: 12),
 
             // ── Setup ──
-            _buildSectionLabel('SETUP'),
+            SectionHeader(title: 'SETUP', padding: EdgeInsets.zero),
             const SizedBox(height: 12),
 
             // Tyre setup
@@ -345,26 +356,8 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
     );
   }
 
-  Widget _buildSectionLabel(String text) {
-    return Text(
-      text,
-      style: AppTypography.labelSmall.copyWith(
-        color: AppColors.textTertiary,
-        letterSpacing: 1.2,
-        fontWeight: FontWeight.w600,
-      ),
-    );
-  }
-
-  /// Check whether a local image file actually exists on disk.
-  bool _imageFileExists(String? path) {
-    if (path == null || path.isEmpty) return false;
-    if (path.startsWith('http')) return true;
-    return File(path).existsSync();
-  }
-
   Widget _buildPhotoSection() {
-    final hasImage = _imageFileExists(_imageUrl);
+    final hasImage = imageFileExists(_imageUrl);
 
     return GestureDetector(
       onTap: _pickImage,
@@ -531,7 +524,6 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
     if (source == null) return;
 
     try {
-      debugPrint('[CarPhoto] Picking image from $source');
       final picker = ImagePicker();
       final picked = await picker.pickImage(
         source: source,
@@ -540,15 +532,10 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
         imageQuality: 90,
       );
 
-      if (picked == null) {
-        debugPrint('[CarPhoto] Picker returned null (user cancelled or permission denied)');
-        return;
-      }
+      if (picked == null) return;
       if (!mounted) return;
-      debugPrint('[CarPhoto] Picked: ${picked.path}');
 
       // Crop the image
-      debugPrint('[CarPhoto] Opening cropper...');
       final cropped = await ImageCropper().cropImage(
         sourcePath: picked.path,
         aspectRatio: const CropAspectRatio(ratioX: 16, ratioY: 9),
@@ -564,12 +551,8 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
         ],
       );
 
-      if (cropped == null) {
-        debugPrint('[CarPhoto] Cropper returned null (user cancelled)');
-        return;
-      }
+      if (cropped == null) return;
       if (!mounted) return;
-      debugPrint('[CarPhoto] Cropped: ${cropped.path}');
 
       // Copy to app documents directory for persistence
       final appDir = await getApplicationDocumentsDirectory();
@@ -581,19 +564,15 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
       final fileName = 'car_${DateTime.now().millisecondsSinceEpoch}$ext';
       final savedPath = p.join(carsDir.path, fileName);
       await File(cropped.path).copy(savedPath);
-      debugPrint('[CarPhoto] Saved to: $savedPath (exists: ${File(savedPath).existsSync()})');
 
       if (mounted) {
         setState(() => _imageUrl = savedPath);
-        debugPrint('[CarPhoto] State updated with imageUrl: $savedPath');
       }
-    } catch (e, stack) {
-      debugPrint('[CarPhoto] ERROR: $e');
-      debugPrint('[CarPhoto] STACK: $stack');
+    } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Could not load image: $e'),
+            content: const Text('Could not load image. Please try again.'),
             backgroundColor: AppColors.red,
           ),
         );
@@ -602,18 +581,13 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
   }
 
   Future<void> _save() async {
-    debugPrint('[CarSave] _save() called');
-    debugPrint('[CarSave] formKey.currentState: ${_formKey.currentState}');
-
     final isValid = _formKey.currentState?.validate() ?? false;
-    debugPrint('[CarSave] Form valid: $isValid');
     if (!isValid) return;
 
     setState(() => _isLoading = true);
 
     try {
-      final db = ref.read(databaseProvider);
-      final repo = CarRepository(db);
+      final repo = ref.read(carRepositoryProvider);
       final year = int.tryParse(_yearController.text);
       final powerHp = int.tryParse(_powerController.text);
       final weightKg = int.tryParse(_weightController.text);
@@ -630,32 +604,29 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
           ? null
           : _tyreSetupController.text.trim();
 
-      debugPrint('[CarSave] isEditing: $_isEditing, imageUrl: $_imageUrl');
-      debugPrint('[CarSave] make: ${_makeController.text.trim()}, model: ${_modelController.text.trim()}');
+      final formData = CarFormData(
+        year: year,
+        carClass: _selectedClass,
+        colour: colour,
+        imageUrl: _imageUrl,
+        powerHp: powerHp,
+        weightKg: weightKg,
+        drivetrain: _isKart ? 'RWD' : _selectedDrivetrain,
+        engineCapacity: engineCapacity,
+        modifications: modifications,
+        tyreSetup: tyreSetup,
+      );
 
       if (_isEditing) {
-        debugPrint('[CarSave] Updating car ${widget.carId}...');
         await repo.updateCar(
           carId: widget.carId!,
           make: _makeController.text.trim(),
           model: _modelController.text.trim(),
-          year: year,
-          carClass: _selectedClass,
-          colour: colour,
-          imageUrl: _imageUrl,
-          powerHp: powerHp,
-          weightKg: weightKg,
-          drivetrain: _isKart ? 'RWD' : _selectedDrivetrain,
-          engineCapacity: engineCapacity,
-          modifications: modifications,
-          tyreSetup: tyreSetup,
+          data: formData,
         );
-        debugPrint('[CarSave] Update complete');
       } else {
         final user = ref.read(currentUserProvider);
-        debugPrint('[CarSave] Creating car, user: ${user?.id}');
         if (user == null) {
-          debugPrint('[CarSave] ERROR: user is null');
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -671,24 +642,13 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
           userId: user.id,
           make: _makeController.text.trim(),
           model: _modelController.text.trim(),
-          year: year,
-          carClass: _selectedClass,
-          colour: colour,
-          imageUrl: _imageUrl,
-          powerHp: powerHp,
-          weightKg: weightKg,
-          drivetrain: _isKart ? 'RWD' : _selectedDrivetrain,
-          engineCapacity: engineCapacity,
-          modifications: modifications,
-          tyreSetup: tyreSetup,
+          data: formData,
         );
-        debugPrint('[CarSave] Create complete');
       }
 
       // Trigger immediate sync so images upload right away.
       ref.read(syncServiceProvider).requestSync();
 
-      debugPrint('[CarSave] Navigating back');
       if (mounted) {
         if (Navigator.of(context).canPop()) {
           context.pop();
@@ -696,13 +656,11 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
           context.go('/profile');
         }
       }
-    } catch (e, stack) {
-      debugPrint('[CarSave] ERROR: $e');
-      debugPrint('[CarSave] STACK: $stack');
+    } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: const Text('Could not save vehicle. Please try again.'),
             backgroundColor: AppColors.red,
           ),
         );
@@ -736,8 +694,7 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
     if (confirmed != true) return;
 
     try {
-      final db = ref.read(databaseProvider);
-      final repo = CarRepository(db);
+      final repo = ref.read(carRepositoryProvider);
       await repo.deleteCar(widget.carId!);
       if (mounted) {
         if (Navigator.of(context).canPop()) {
@@ -749,7 +706,7 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.red),
+          const SnackBar(content: Text('Could not delete vehicle. Please try again.'), backgroundColor: AppColors.red),
         );
       }
     }

@@ -2,8 +2,51 @@
 
 import 'dart:convert';
 import 'package:drift/drift.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../../../core/database/app_database.dart';
+import '../../../core/providers/database_provider.dart';
+
+/// Groups optional car fields for create/update operations.
+class CarFormData {
+  const CarFormData({
+    this.year,
+    this.carClass,
+    this.colour,
+    this.imageUrl,
+    this.powerHp,
+    this.weightKg,
+    this.drivetrain,
+    this.engineCapacity,
+    this.modifications,
+    this.tyreSetup,
+  });
+
+  final int? year;
+  final String? carClass;
+  final String? colour;
+  final String? imageUrl;
+  final int? powerHp;
+  final int? weightKg;
+  final String? drivetrain;
+  final String? engineCapacity;
+  final String? modifications;
+  final String? tyreSetup;
+
+  /// Build the sync payload map (uses Supabase column names).
+  Map<String, dynamic> toSyncPayload() => {
+        if (year != null) 'year': year,
+        if (carClass != null) 'class': carClass,
+        if (colour != null) 'colour': colour,
+        if (imageUrl != null) 'image_url': imageUrl,
+        if (powerHp != null) 'power_hp': powerHp,
+        if (weightKg != null) 'weight_kg': weightKg,
+        if (drivetrain != null) 'drivetrain': drivetrain,
+        if (engineCapacity != null) 'engine_capacity': engineCapacity,
+        if (modifications != null) 'modifications': modifications,
+        if (tyreSetup != null) 'tyre_setup': tyreSetup,
+      };
+}
 
 /// Repository for car CRUD operations (Garage feature).
 class CarRepository {
@@ -37,16 +80,7 @@ class CarRepository {
     required String userId,
     required String make,
     required String model,
-    int? year,
-    String? carClass,
-    String? colour,
-    String? imageUrl,
-    int? powerHp,
-    int? weightKg,
-    String? drivetrain,
-    String? engineCapacity,
-    String? modifications,
-    String? tyreSetup,
+    CarFormData data = const CarFormData(),
   }) async {
     final id = _uuid.v4();
     final now = DateTime.now();
@@ -57,16 +91,16 @@ class CarRepository {
         userId: userId,
         make: make,
         model: model,
-        year: Value(year),
-        carClass: Value(carClass),
-        colour: Value(colour),
-        imageUrl: Value(imageUrl),
-        powerHp: Value(powerHp),
-        weightKg: Value(weightKg),
-        drivetrain: Value(drivetrain),
-        engineCapacity: Value(engineCapacity),
-        modifications: Value(modifications),
-        tyreSetup: Value(tyreSetup),
+        year: Value(data.year),
+        carClass: Value(data.carClass),
+        colour: Value(data.colour),
+        imageUrl: Value(data.imageUrl),
+        powerHp: Value(data.powerHp),
+        weightKg: Value(data.weightKg),
+        drivetrain: Value(data.drivetrain),
+        engineCapacity: Value(data.engineCapacity),
+        modifications: Value(data.modifications),
+        tyreSetup: Value(data.tyreSetup),
         createdAt: Value(now),
       ),
     );
@@ -80,16 +114,7 @@ class CarRepository {
         'user_id': userId,
         'make': make,
         'model': model,
-        if (year != null) 'year': year,
-        if (carClass != null) 'class': carClass,
-        if (colour != null) 'colour': colour,
-        if (imageUrl != null) 'image_url': imageUrl,
-        if (powerHp != null) 'power_hp': powerHp,
-        if (weightKg != null) 'weight_kg': weightKg,
-        if (drivetrain != null) 'drivetrain': drivetrain,
-        if (engineCapacity != null) 'engine_capacity': engineCapacity,
-        if (modifications != null) 'modifications': modifications,
-        if (tyreSetup != null) 'tyre_setup': tyreSetup,
+        ...data.toSyncPayload(),
         'created_at': now.toIso8601String(),
       }),
     );
@@ -105,16 +130,7 @@ class CarRepository {
     required String carId,
     String? make,
     String? model,
-    int? year,
-    String? carClass,
-    String? colour,
-    String? imageUrl,
-    int? powerHp,
-    int? weightKg,
-    String? drivetrain,
-    String? engineCapacity,
-    String? modifications,
-    String? tyreSetup,
+    CarFormData data = const CarFormData(),
   }) async {
     // Fetch existing car to merge unchanged fields for a full upsert.
     final existing = await getCar(carId);
@@ -126,16 +142,16 @@ class CarRepository {
         userId: existing.userId,
         make: make ?? existing.make,
         model: model ?? existing.model,
-        year: Value(year ?? existing.year),
-        carClass: Value(carClass ?? existing.carClass),
-        colour: Value(colour ?? existing.colour),
-        imageUrl: Value(imageUrl ?? existing.imageUrl),
-        powerHp: Value(powerHp ?? existing.powerHp),
-        weightKg: Value(weightKg ?? existing.weightKg),
-        drivetrain: Value(drivetrain ?? existing.drivetrain),
-        engineCapacity: Value(engineCapacity ?? existing.engineCapacity),
-        modifications: Value(modifications ?? existing.modifications),
-        tyreSetup: Value(tyreSetup ?? existing.tyreSetup),
+        year: Value(data.year ?? existing.year),
+        carClass: Value(data.carClass ?? existing.carClass),
+        colour: Value(data.colour ?? existing.colour),
+        imageUrl: Value(data.imageUrl ?? existing.imageUrl),
+        powerHp: Value(data.powerHp ?? existing.powerHp),
+        weightKg: Value(data.weightKg ?? existing.weightKg),
+        drivetrain: Value(data.drivetrain ?? existing.drivetrain),
+        engineCapacity: Value(data.engineCapacity ?? existing.engineCapacity),
+        modifications: Value(data.modifications ?? existing.modifications),
+        tyreSetup: Value(data.tyreSetup ?? existing.tyreSetup),
         createdAt: Value(existing.createdAt),
       ),
     );
@@ -143,16 +159,7 @@ class CarRepository {
     final payload = <String, dynamic>{'id': carId};
     if (make != null) payload['make'] = make;
     if (model != null) payload['model'] = model;
-    if (year != null) payload['year'] = year;
-    if (carClass != null) payload['class'] = carClass;
-    if (colour != null) payload['colour'] = colour;
-    if (imageUrl != null) payload['image_url'] = imageUrl;
-    if (powerHp != null) payload['power_hp'] = powerHp;
-    if (weightKg != null) payload['weight_kg'] = weightKg;
-    if (drivetrain != null) payload['drivetrain'] = drivetrain;
-    if (engineCapacity != null) payload['engine_capacity'] = engineCapacity;
-    if (modifications != null) payload['modifications'] = modifications;
-    if (tyreSetup != null) payload['tyre_setup'] = tyreSetup;
+    payload.addAll(data.toSyncPayload());
 
     await _db.enqueueSync(
       targetTable: 'cars',
@@ -174,3 +181,9 @@ class CarRepository {
     );
   }
 }
+
+/// Riverpod provider for CarRepository.
+final carRepositoryProvider = Provider<CarRepository>((ref) {
+  final db = ref.watch(databaseProvider);
+  return CarRepository(db);
+});

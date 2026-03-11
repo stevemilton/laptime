@@ -11,6 +11,7 @@ import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/app_avatar.dart';
 import '../../../core/widgets/app_pill.dart';
 import '../../../core/widgets/empty_state.dart';
+import '../../../core/constants/role_constants.dart';
 import '../data/team_providers.dart';
 import '../data/team_repository.dart';
 import '../data/crew_repository.dart';
@@ -27,7 +28,7 @@ class TeamDetailScreen extends ConsumerStatefulWidget {
 class _TeamDetailScreenState extends ConsumerState<TeamDetailScreen> {
   bool get _isAdmin {
     final roleAsync = ref.watch(userRoleProvider(widget.teamId));
-    return roleAsync.valueOrNull == 'admin';
+    return roleAsync.valueOrNull == TeamRole.admin;
   }
 
   void _invalidateAll() {
@@ -106,7 +107,11 @@ class _TeamDetailScreenState extends ConsumerState<TeamDetailScreen> {
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (_, __) => const EmptyState(
+          icon: LucideIcons.alertCircle,
+          title: 'Something went wrong',
+          subtitle: 'Could not load team details. Pull to refresh.',
+        ),
       ),
     );
   }
@@ -165,7 +170,7 @@ class _TeamDetailScreenState extends ConsumerState<TeamDetailScreen> {
   }
 
   Widget _buildInviteCodeSection(TeamInfo team) {
-    if (team.currentUserRole != 'admin') return const SizedBox.shrink();
+    if (team.currentUserRole != TeamRole.admin) return const SizedBox.shrink();
 
     return AppCard(
       child: Row(
@@ -224,8 +229,8 @@ class _TeamDetailScreenState extends ConsumerState<TeamDetailScreen> {
                 ),
                 const SizedBox(height: 4),
                 AppPill.filled(
-                  label: team.currentUserRole == 'admin' ? 'Admin' : 'Member',
-                  backgroundColor: team.currentUserRole == 'admin'
+                  label: team.currentUserRole == TeamRole.admin ? 'Admin' : 'Member',
+                  backgroundColor: team.currentUserRole == TeamRole.admin
                       ? AppColors.purple
                       : AppColors.textTertiary,
                 ),
@@ -332,7 +337,12 @@ class _TeamDetailScreenState extends ConsumerState<TeamDetailScreen> {
           },
           loading: () =>
               const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Text('Error: $e'),
+          error: (_, __) => Text(
+            'Could not load crews.',
+            style: AppTypography.bodyMedium.copyWith(
+              color: AppColors.textTertiary,
+            ),
+          ),
         ),
       ],
     );
@@ -364,7 +374,12 @@ class _TeamDetailScreenState extends ConsumerState<TeamDetailScreen> {
           },
           loading: () =>
               const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Text('Error: $e'),
+          error: (_, __) => Text(
+            'Could not load members.',
+            style: AppTypography.bodyMedium.copyWith(
+              color: AppColors.textTertiary,
+            ),
+          ),
         ),
       ],
     );
@@ -430,10 +445,11 @@ class _TeamDetailScreenState extends ConsumerState<TeamDetailScreen> {
                 );
                 _invalidateAll();
               } catch (e) {
+                debugPrint('[TeamDetail] Failed to update team: $e');
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                        content: Text('$e'), backgroundColor: AppColors.red),
+                    const SnackBar(
+                        content: Text('Could not update team. Please try again.'), backgroundColor: AppColors.red),
                   );
                 }
               }
@@ -477,9 +493,10 @@ class _TeamDetailScreenState extends ConsumerState<TeamDetailScreen> {
         );
       }
     } catch (e) {
+      debugPrint('[TeamDetail] Failed to regenerate code: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$e'), backgroundColor: AppColors.red),
+          const SnackBar(content: Text('Could not regenerate invite code. Please try again.'), backgroundColor: AppColors.red),
         );
       }
     }
@@ -516,9 +533,10 @@ class _TeamDetailScreenState extends ConsumerState<TeamDetailScreen> {
       ref.invalidate(userTeamsProvider);
       if (mounted) context.pop();
     } catch (e) {
+      debugPrint('[TeamDetail] Failed to delete team: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$e'), backgroundColor: AppColors.red),
+          const SnackBar(content: Text('Could not delete team. Please try again.'), backgroundColor: AppColors.red),
         );
       }
     }
@@ -558,9 +576,10 @@ class _TeamDetailScreenState extends ConsumerState<TeamDetailScreen> {
       ref.invalidate(userTeamsProvider);
       if (mounted) context.pop();
     } catch (e) {
+      debugPrint('[TeamDetail] Failed to leave team: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$e'), backgroundColor: AppColors.red),
+          const SnackBar(content: Text('Could not leave team. Please try again.'), backgroundColor: AppColors.red),
         );
       }
     }
@@ -605,10 +624,11 @@ class _TeamDetailScreenState extends ConsumerState<TeamDetailScreen> {
                   );
                 }
               } catch (e) {
+                debugPrint('[TeamDetail] Failed to create crew: $e');
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                        content: Text('$e'), backgroundColor: AppColors.red),
+                    const SnackBar(
+                        content: Text('Could not create crew. Please try again.'), backgroundColor: AppColors.red),
                   );
                 }
               }
@@ -688,10 +708,11 @@ class _CrewCard extends ConsumerWidget {
                       crewId: crew.id, userId: user.id);
                   onChanged();
                 } catch (e) {
+                  debugPrint('[TeamDetail] Failed to join crew: $e');
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                          content: Text('$e'),
+                      const SnackBar(
+                          content: Text('Could not join crew. Please try again.'),
                           backgroundColor: AppColors.red),
                     );
                   }
@@ -775,8 +796,8 @@ class _MemberTile extends ConsumerWidget {
             ),
           ),
           AppPill.filled(
-            label: member.role == 'admin' ? 'Admin' : 'Member',
-            backgroundColor: member.role == 'admin'
+            label: member.role == TeamRole.admin ? 'Admin' : 'Member',
+            backgroundColor: member.role == TeamRole.admin
                 ? AppColors.purple
                 : AppColors.textTertiary,
           ),
@@ -787,12 +808,12 @@ class _MemberTile extends ConsumerWidget {
               onSelected: (action) =>
                   _handleMemberAction(context, ref, action),
               itemBuilder: (_) => [
-                if (member.role == 'member')
+                if (member.role == TeamRole.member)
                   const PopupMenuItem(
                     value: 'promote',
                     child: Text('Promote to Admin'),
                   ),
-                if (member.role == 'admin')
+                if (member.role == TeamRole.admin)
                   const PopupMenuItem(
                     value: 'demote',
                     child: Text('Demote to Member'),
@@ -816,10 +837,10 @@ class _MemberTile extends ConsumerWidget {
       switch (action) {
         case 'promote':
           await repo.promoteToAdmin(
-              teamId: teamId, userId: member.userId);
+              teamId: teamId, userId: member.userId, callerUserId: currentUserId);
         case 'demote':
           await repo.demoteToMember(
-              teamId: teamId, userId: member.userId);
+              teamId: teamId, userId: member.userId, callerUserId: currentUserId);
         case 'remove':
           final confirmed = await showDialog<bool>(
             context: context,
@@ -851,9 +872,10 @@ class _MemberTile extends ConsumerWidget {
       }
       onChanged();
     } catch (e) {
+      debugPrint('[TeamDetail] Failed member action: $e');
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$e'), backgroundColor: AppColors.red),
+          const SnackBar(content: Text('Something went wrong. Please try again.'), backgroundColor: AppColors.red),
         );
       }
     }

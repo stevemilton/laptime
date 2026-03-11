@@ -52,20 +52,29 @@ class SensorService {
   double _latestBaroPressure = 0;
 
   // Aligned buffers for the current lap (all same length, keyed to accel timestamps)
-  final List<double> timestamps = [];
-  final List<double> accelX = [];
-  final List<double> accelY = [];
-  final List<double> accelZ = [];
-  final List<double> gyroX = [];
-  final List<double> gyroY = [];
-  final List<double> gyroZ = [];
-  final List<double> magHeading = [];
-  final List<double> baroPressure = [];
+  final List<double> _timestamps = [];
+  final List<double> _accelX = [];
+  final List<double> _accelY = [];
+  final List<double> _accelZ = [];
+  final List<double> _gyroX = [];
+  final List<double> _gyroY = [];
+  final List<double> _gyroZ = [];
+  final List<double> _magHeading = [];
+  final List<double> _baroPressure = [];
 
   // Latest readings for UI display
-  double? lastAccelX, lastAccelY, lastAccelZ;
-  double? lastGyroX, lastGyroY, lastGyroZ;
-  double? lastPressure;
+  double? _lastAccelX, _lastAccelY, _lastAccelZ;
+  double? _lastGyroX, _lastGyroY, _lastGyroZ;
+  double? _lastPressure;
+
+  // Public read-only accessors for UI display
+  double? get lastAccelX => _lastAccelX;
+  double? get lastAccelY => _lastAccelY;
+  double? get lastAccelZ => _lastAccelZ;
+  double? get lastGyroX => _lastGyroX;
+  double? get lastGyroY => _lastGyroY;
+  double? get lastGyroZ => _lastGyroZ;
+  double? get lastPressure => _lastPressure;
 
   /// Start all sensor streams.
   void startRecording() {
@@ -79,19 +88,19 @@ class SensorService {
       final ts = _elapsedSeconds();
 
       // Record aligned data: accel is the master, others use latest values
-      timestamps.add(ts);
-      accelX.add(event.x);
-      accelY.add(event.y);
-      accelZ.add(event.z);
-      gyroX.add(_latestGyroX);
-      gyroY.add(_latestGyroY);
-      gyroZ.add(_latestGyroZ);
-      magHeading.add(_latestMagHeading);
-      baroPressure.add(_latestBaroPressure);
+      _timestamps.add(ts);
+      _accelX.add(event.x);
+      _accelY.add(event.y);
+      _accelZ.add(event.z);
+      _gyroX.add(_latestGyroX);
+      _gyroY.add(_latestGyroY);
+      _gyroZ.add(_latestGyroZ);
+      _magHeading.add(_latestMagHeading);
+      _baroPressure.add(_latestBaroPressure);
 
-      lastAccelX = event.x;
-      lastAccelY = event.y;
-      lastAccelZ = event.z;
+      _lastAccelX = event.x;
+      _lastAccelY = event.y;
+      _lastAccelZ = event.z;
     }, onError: (e) => debugPrint('Accel error: $e'));
 
     // Gyroscope at ~50Hz — updates latest values
@@ -101,9 +110,9 @@ class SensorService {
       _latestGyroX = event.x;
       _latestGyroY = event.y;
       _latestGyroZ = event.z;
-      lastGyroX = event.x;
-      lastGyroY = event.y;
-      lastGyroZ = event.z;
+      _lastGyroX = event.x;
+      _lastGyroY = event.y;
+      _lastGyroZ = event.z;
     }, onError: (e) => debugPrint('Gyro error: $e'));
 
     // Magnetometer at ~10Hz — updates latest heading
@@ -118,22 +127,22 @@ class SensorService {
       samplingPeriod: const Duration(seconds: 1),
     ).listen((event) {
       _latestBaroPressure = event.pressure;
-      lastPressure = event.pressure;
+      _lastPressure = event.pressure;
     }, onError: (e) => debugPrint('Baro error: $e'));
   }
 
   /// Get current lap sensor data and reset buffers for next lap.
   LapSensorSnapshot captureLapData() {
     final snapshot = LapSensorSnapshot(
-      timestamps: List.from(timestamps),
-      accelX: List.from(accelX),
-      accelY: List.from(accelY),
-      accelZ: List.from(accelZ),
-      gyroX: List.from(gyroX),
-      gyroY: List.from(gyroY),
-      gyroZ: List.from(gyroZ),
-      magHeading: List.from(magHeading),
-      baroPressure: List.from(baroPressure),
+      timestamps: List.from(_timestamps),
+      accelX: List.from(_accelX),
+      accelY: List.from(_accelY),
+      accelZ: List.from(_accelZ),
+      gyroX: List.from(_gyroX),
+      gyroY: List.from(_gyroY),
+      gyroZ: List.from(_gyroZ),
+      magHeading: List.from(_magHeading),
+      baroPressure: List.from(_baroPressure),
     );
     _clearBuffers();
     return snapshot;
@@ -162,15 +171,15 @@ class SensorService {
   }
 
   void _clearBuffers() {
-    timestamps.clear();
-    accelX.clear();
-    accelY.clear();
-    accelZ.clear();
-    gyroX.clear();
-    gyroY.clear();
-    gyroZ.clear();
-    magHeading.clear();
-    baroPressure.clear();
+    _timestamps.clear();
+    _accelX.clear();
+    _accelY.clear();
+    _accelZ.clear();
+    _gyroX.clear();
+    _gyroY.clear();
+    _gyroZ.clear();
+    _magHeading.clear();
+    _baroPressure.clear();
     _latestGyroX = 0;
     _latestGyroY = 0;
     _latestGyroZ = 0;

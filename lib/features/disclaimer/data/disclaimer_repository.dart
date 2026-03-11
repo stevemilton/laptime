@@ -1,7 +1,10 @@
 import 'package:drift/drift.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../../../core/database/app_database.dart';
+import '../../../core/providers/database_provider.dart';
+import '../../../core/providers/supabase_provider.dart';
 
 /// Current disclaimer version. Bump this when the disclaimer text changes
 /// to require re-acceptance.
@@ -70,3 +73,10 @@ class DisclaimerRepository {
     }
   }
 }
+
+/// Riverpod provider for DisclaimerRepository.
+final disclaimerRepositoryProvider = Provider<DisclaimerRepository>((ref) {
+  final db = ref.watch(databaseProvider);
+  final client = ref.watch(supabaseClientProvider);
+  return DisclaimerRepository(db, client);
+});

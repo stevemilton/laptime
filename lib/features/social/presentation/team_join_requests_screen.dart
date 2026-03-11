@@ -18,6 +18,42 @@ class TeamJoinRequestsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Guard: only team admins can view join requests
+    final roleAsync = ref.watch(userRoleProvider(teamId));
+    final isAdmin = roleAsync.valueOrNull == TeamRole.admin;
+
+    if (roleAsync.isLoading) {
+      return Scaffold(
+        backgroundColor: AppColors.white,
+        appBar: AppBar(
+          title: const Text('Join Requests'),
+          leading: IconButton(
+            icon: const Icon(LucideIcons.arrowLeft),
+            onPressed: () => context.pop(),
+          ),
+        ),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (!isAdmin) {
+      return Scaffold(
+        backgroundColor: AppColors.white,
+        appBar: AppBar(
+          title: const Text('Join Requests'),
+          leading: IconButton(
+            icon: const Icon(LucideIcons.arrowLeft),
+            onPressed: () => context.pop(),
+          ),
+        ),
+        body: const EmptyState(
+          icon: LucideIcons.shieldOff,
+          title: 'Admin access required',
+          subtitle: 'Only team admins can manage join requests.',
+        ),
+      );
+    }
+
     final requestsAsync = ref.watch(pendingRequestsProvider(teamId));
 
     return Scaffold(
@@ -56,7 +92,11 @@ class TeamJoinRequestsScreen extends ConsumerWidget {
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (_, __) => const EmptyState(
+          icon: LucideIcons.alertCircle,
+          title: 'Something went wrong',
+          subtitle: 'Could not load join requests. Pull to refresh.',
+        ),
       ),
     );
   }
@@ -190,9 +230,10 @@ class _RequestCard extends ConsumerWidget {
         );
       }
     } catch (e) {
+      debugPrint('[JoinRequests] Failed to approve request: $e');
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$e'), backgroundColor: AppColors.red),
+          const SnackBar(content: Text('Could not approve request. Please try again.'), backgroundColor: AppColors.red),
         );
       }
     }
@@ -248,9 +289,10 @@ class _RequestCard extends ConsumerWidget {
         );
       }
     } catch (e) {
+      debugPrint('[JoinRequests] Failed to reject request: $e');
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$e'), backgroundColor: AppColors.red),
+          const SnackBar(content: Text('Could not reject request. Please try again.'), backgroundColor: AppColors.red),
         );
       }
     }

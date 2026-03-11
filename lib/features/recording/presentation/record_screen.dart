@@ -18,7 +18,7 @@ import '../../../core/services/weather_service.dart';
 import '../../../core/utils/format_utils.dart';
 import '../../../core/widgets/weather_strip.dart';
 import '../../../core/widgets/gps_indicator.dart';
-import '../../../features/settings/presentation/settings_screen.dart';
+import '../../../core/providers/preferences_provider.dart';
 import 'recording_controller.dart';
 
 /// Provider for the most recent session.
@@ -373,7 +373,7 @@ class _RecordScreenState extends ConsumerState<RecordScreen>
                 // Date
                 Expanded(
                   child: Text(
-                    _formatSessionDate(session.startedAt),
+                    FormatUtils.formatRelativeDate(session.startedAt),
                     style: AppTypography.bodySmall.copyWith(
                       color: AppColors.textTertiary,
                     ),
@@ -401,15 +401,6 @@ class _RecordScreenState extends ConsumerState<RecordScreen>
         ),
       ),
     );
-  }
-
-  String _formatSessionDate(DateTime date) {
-    final now = DateTime.now();
-    final diff = now.difference(date);
-    if (diff.inDays == 0) return 'Today';
-    if (diff.inDays == 1) return 'Yesterday';
-    if (diff.inDays < 7) return '${diff.inDays} days ago';
-    return '${date.day}/${date.month}/${date.year}';
   }
 
   Future<void> _onStartRecording() async {

@@ -10,6 +10,8 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_shadows.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/supabase_provider.dart';
+import '../../../core/utils/image_utils.dart';
+import '../../../core/utils/string_utils.dart';
 import '../../../core/widgets/app_avatar.dart';
 import '../../../core/widgets/app_pill.dart';
 import '../../../core/widgets/app_card.dart';
@@ -21,17 +23,8 @@ import '../../../core/database/app_database.dart';
 import '../../../core/utils/format_utils.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../social/data/team_providers.dart';
+import '../data/profile_providers.dart';
 import '../data/profile_repository.dart';
-
-/// Profile provider - watches the current user's profile.
-final profileProvider = StreamProvider<LocalProfile?>((ref) {
-  final user = ref.watch(currentUserProvider);
-  if (user == null) return Stream.value(null);
-  final db = ref.watch(databaseProvider);
-  return (db.select(db.localProfiles)
-        ..where((t) => t.id.equals(user.id)))
-      .watchSingleOrNull();
-});
 
 /// Cars provider - watches the user's garage.
 final userCarsProvider = StreamProvider<List<LocalCar>>((ref) {
@@ -39,23 +32,6 @@ final userCarsProvider = StreamProvider<List<LocalCar>>((ref) {
   if (user == null) return Stream.value([]);
   final db = ref.watch(databaseProvider);
   return db.watchUserCars(user.id);
-});
-
-/// Stats provider
-final profileStatsProvider = FutureProvider<ProfileStats>((ref) async {
-  final user = ref.watch(currentUserProvider);
-  if (user == null) {
-    return ProfileStats(
-      sessionCount: 0,
-      circuitCount: 0,
-      lapCount: 0,
-      p1Count: 0,
-    );
-  }
-  final db = ref.read(databaseProvider);
-  final client = ref.read(supabaseClientProvider);
-  final repo = ProfileRepository(db, client);
-  return repo.getStats(user.id);
 });
 
 /// Recent sessions provider - watches last 5 sessions for the user.
@@ -439,7 +415,7 @@ class ProfileScreen extends ConsumerWidget {
 
   Widget _buildProfileAvatar(LocalProfile? profile) {
     final avatarUrl = profile?.avatarUrl;
-    final initials = _getInitials(profile?.displayName);
+    final initials = getInitials(profile?.displayName);
 
     // If the avatar is a local file path that exists, use FileImage
     if (avatarUrl != null &&
@@ -466,14 +442,6 @@ class ProfileScreen extends ConsumerWidget {
     );
   }
 
-  String? _getInitials(String? name) {
-    if (name == null || name.isEmpty) return null;
-    final parts = name.split(' ');
-    if (parts.length >= 2) {
-      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-    }
-    return name[0].toUpperCase();
-  }
 }
 
 /// A compact session card for the recent sessions list.
@@ -514,7 +482,7 @@ class _SessionCard extends ConsumerWidget {
             // Date
             Expanded(
               child: Text(
-                _formatDate(session.startedAt),
+                FormatUtils.formatRelativeDate(session.startedAt),
                 style: AppTypography.bodySmall.copyWith(
                   color: AppColors.textSecondary,
                 ),
@@ -546,14 +514,6 @@ class _SessionCard extends ConsumerWidget {
     );
   }
 
-  String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final diff = now.difference(date);
-    if (diff.inDays == 0) return 'Today';
-    if (diff.inDays == 1) return 'Yesterday';
-    if (diff.inDays < 7) return '${diff.inDays} days ago';
-    return '${date.day}/${date.month}/${date.year}';
-  }
 }
 
 class _CarCard extends StatelessWidget {
@@ -562,15 +522,9 @@ class _CarCard extends StatelessWidget {
   final LocalCar car;
   final VoidCallback? onTap;
 
-  bool _imageFileExists(String? url) {
-    if (url == null || url.isEmpty) return false;
-    if (url.startsWith('http')) return true;
-    return File(url).existsSync();
-  }
-
   @override
   Widget build(BuildContext context) {
-    final hasImage = _imageFileExists(car.imageUrl);
+    final hasImage = imageFileExists(car.imageUrl);
     final isKart = car.carClass == 'Kart';
 
     return GestureDetector(

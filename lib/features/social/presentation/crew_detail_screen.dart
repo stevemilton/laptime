@@ -11,61 +11,22 @@ import '../../../core/widgets/app_avatar.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/app_pill.dart';
 import '../../../core/widgets/empty_state.dart';
+import '../../../core/constants/role_constants.dart';
 import '../data/team_providers.dart';
 import '../data/crew_repository.dart';
 
-class CrewDetailScreen extends ConsumerStatefulWidget {
+class CrewDetailScreen extends ConsumerWidget {
   const CrewDetailScreen({super.key, required this.crewId});
 
   final String crewId;
 
   @override
-  ConsumerState<CrewDetailScreen> createState() => _CrewDetailScreenState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    final crewAsync = ref.watch(crewDetailProvider(crewId));
+    final membersAsync = ref.watch(crewMembersProvider(crewId));
 
-class _CrewDetailScreenState extends ConsumerState<CrewDetailScreen> {
-  CrewInfo? _crew;
-  List<CrewMemberInfo> _members = [];
-  bool _isLoading = true;
-  bool _isTeamAdmin = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadData();
-  }
-
-  Future<void> _loadData() async {
-    final user = ref.read(currentUserProvider);
-    if (user == null) return;
-
-    final crewRepo = ref.read(crewRepositoryProvider);
-    final crew = await crewRepo.getCrew(widget.crewId, currentUserId: user.id);
-
-    if (crew != null) {
-      final members = await crewRepo.getCrewMembers(widget.crewId);
-
-      // Check if user is team admin
-      final teamRepo = ref.read(teamRepositoryProvider);
-      final role = await teamRepo.getUserRoleInTeam(crew.teamId, user.id);
-
-      if (mounted) {
-        setState(() {
-          _crew = crew;
-          _members = members;
-          _isTeamAdmin = role == 'admin';
-          _isLoading = false;
-        });
-      }
-    } else {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_isLoading) {
-      return Scaffold(
+    return crewAsync.when(
+      loading: () => Scaffold(
         backgroundColor: AppColors.white,
         appBar: AppBar(
           leading: IconButton(
@@ -74,11 +35,8 @@ class _CrewDetailScreenState extends ConsumerState<CrewDetailScreen> {
           ),
         ),
         body: const Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    if (_crew == null) {
-      return Scaffold(
+      ),
+      error: (_, __) => Scaffold(
         backgroundColor: AppColors.white,
         appBar: AppBar(
           leading: IconButton(
@@ -88,12 +46,58 @@ class _CrewDetailScreenState extends ConsumerState<CrewDetailScreen> {
         ),
         body: const EmptyState(
           icon: LucideIcons.alertCircle,
-          title: 'Crew not found',
+          title: 'Something went wrong',
+          subtitle: 'Could not load crew details.',
         ),
-      );
-    }
+      ),
+      data: (crew) => crew == null
+          ? Scaffold(
+              backgroundColor: AppColors.white,
+              appBar: AppBar(
+                leading: IconButton(
+                  icon: const Icon(LucideIcons.arrowLeft),
+                  onPressed: () => context.pop(),
+                ),
+              ),
+              body: const EmptyState(
+                icon: LucideIcons.alertCircle,
+                title: 'Crew not found',
+              ),
+            )
+          : _CrewDetailBody(
+              crewId: crewId,
+              crew: crew,
+              membersAsync: membersAsync,
+            ),
+    );
+  }
+}
 
-    final crew = _crew!;
+class _CrewDetailBody extends ConsumerWidget {
+  const _CrewDetailBody({
+    required this.crewId,
+    required this.crew,
+    required this.membersAsync,
+  });
+
+  final String crewId;
+  final CrewInfo crew;
+  final AsyncValue<List<CrewMemberInfo>> membersAsync;
+
+  bool _isTeamAdmin(WidgetRef ref) {
+    final roleAsync = ref.watch(userRoleProvider(crew.teamId));
+    return roleAsync.valueOrNull == TeamRole.admin;
+  }
+
+  void _invalidateAll(WidgetRef ref) {
+    ref.invalidate(crewDetailProvider(crewId));
+    ref.invalidate(crewMembersProvider(crewId));
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isAdmin = _isTeamAdmin(ref);
+    final members = membersAsync.valueOrNull ?? [];
 
     return Scaffold(
       backgroundColor: AppColors.white,
@@ -104,10 +108,12 @@ class _CrewDetailScreenState extends ConsumerState<CrewDetailScreen> {
           onPressed: () => context.pop(),
         ),
         actions: [
-          if (_isTeamAdmin)
+          if (isAdmin)
             PopupMenuButton<String>(
               icon: const Icon(LucideIcons.moreVertical),
-              onSelected: _handleMenuAction,
+              onSelected: (action) {
+                if (action == 'delete') _deleteCrew(context, ref);
+              },
               itemBuilder: (_) => [
                 const PopupMenuItem(
                   value: 'delete',
@@ -118,7 +124,7 @@ class _CrewDetailScreenState extends ConsumerState<CrewDetailScreen> {
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: _loadData,
+        onRefresh: () async => _invalidateAll(ref),
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: [
@@ -210,7 +216,7 @@ class _CrewDetailScreenState extends ConsumerState<CrewDetailScreen> {
             // Join/Leave button
             if (crew.isCurrentUserMember)
               OutlinedButton.icon(
-                onPressed: _leaveCrew,
+                onPressed: () => _leaveCrew(context, ref),
                 icon: const Icon(LucideIcons.logOut, size: 16),
                 label: const Text('Leave Crew'),
                 style: OutlinedButton.styleFrom(
@@ -220,7 +226,7 @@ class _CrewDetailScreenState extends ConsumerState<CrewDetailScreen> {
               )
             else
               FilledButton.icon(
-                onPressed: _joinCrew,
+                onPressed: () => _joinCrew(context, ref),
                 icon: const Icon(LucideIcons.plus, size: 16),
                 label: const Text('Join Crew'),
               ),
@@ -231,7 +237,7 @@ class _CrewDetailScreenState extends ConsumerState<CrewDetailScreen> {
             Text('Members', style: AppTypography.headlineSmall),
             const SizedBox(height: 12),
 
-            if (_members.isEmpty)
+            if (members.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 child: Text(
@@ -242,7 +248,7 @@ class _CrewDetailScreenState extends ConsumerState<CrewDetailScreen> {
                 ),
               )
             else
-              ..._members.map((m) => Padding(
+              ...members.map((m) => Padding(
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Row(
                       children: [
@@ -276,8 +282,8 @@ class _CrewDetailScreenState extends ConsumerState<CrewDetailScreen> {
                         ),
                         AppPill.filled(
                           label:
-                              m.role == 'captain' ? 'Captain' : 'Member',
-                          backgroundColor: m.role == 'captain'
+                              m.role == CrewRole.captain ? 'Captain' : 'Member',
+                          backgroundColor: m.role == CrewRole.captain
                               ? AppColors.purple
                               : AppColors.textTertiary,
                         ),
@@ -290,45 +296,43 @@ class _CrewDetailScreenState extends ConsumerState<CrewDetailScreen> {
     );
   }
 
-  void _handleMenuAction(String action) {
-    if (action == 'delete') _deleteCrew();
-  }
-
-  void _joinCrew() async {
+  void _joinCrew(BuildContext context, WidgetRef ref) async {
     final user = ref.read(currentUserProvider);
     if (user == null) return;
 
     try {
       final repo = ref.read(crewRepositoryProvider);
-      await repo.joinCrew(crewId: widget.crewId, userId: user.id);
-      _loadData();
+      await repo.joinCrew(crewId: crewId, userId: user.id);
+      _invalidateAll(ref);
     } catch (e) {
-      if (mounted) {
+      debugPrint('[CrewDetail] Failed to join crew: $e');
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$e'), backgroundColor: AppColors.red),
+          const SnackBar(content: Text('Could not join crew. Please try again.'), backgroundColor: AppColors.red),
         );
       }
     }
   }
 
-  void _leaveCrew() async {
+  void _leaveCrew(BuildContext context, WidgetRef ref) async {
     final user = ref.read(currentUserProvider);
     if (user == null) return;
 
     try {
       final repo = ref.read(crewRepositoryProvider);
-      await repo.leaveCrew(crewId: widget.crewId, userId: user.id);
-      _loadData();
+      await repo.leaveCrew(crewId: crewId, userId: user.id);
+      _invalidateAll(ref);
     } catch (e) {
-      if (mounted) {
+      debugPrint('[CrewDetail] Failed to leave crew: $e');
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$e'), backgroundColor: AppColors.red),
+          const SnackBar(content: Text('Could not leave crew. Please try again.'), backgroundColor: AppColors.red),
         );
       }
     }
   }
 
-  void _deleteCrew() async {
+  void _deleteCrew(BuildContext context, WidgetRef ref) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -353,12 +357,13 @@ class _CrewDetailScreenState extends ConsumerState<CrewDetailScreen> {
 
     try {
       final repo = ref.read(crewRepositoryProvider);
-      await repo.deleteCrew(widget.crewId);
-      if (mounted) context.pop();
+      await repo.deleteCrew(crewId);
+      if (context.mounted) context.pop();
     } catch (e) {
-      if (mounted) {
+      debugPrint('[CrewDetail] Failed to delete crew: $e');
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$e'), backgroundColor: AppColors.red),
+          const SnackBar(content: Text('Could not delete crew. Please try again.'), backgroundColor: AppColors.red),
         );
       }
     }

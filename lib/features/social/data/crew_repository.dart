@@ -1,9 +1,10 @@
 import 'dart:convert';
-import 'dart:math';
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/database/app_database.dart';
+import '../../../core/constants/role_constants.dart';
+import '../../../core/utils/invite_code_utils.dart';
 
 const _uuid = Uuid();
 
@@ -60,7 +61,7 @@ class CrewRepository {
     required String name,
   }) async {
     final id = _uuid.v4();
-    final inviteCode = _generateInviteCode();
+    final inviteCode = generateInviteCode();
 
     await _db.into(_db.localCrews).insert(
       LocalCrewsCompanion.insert(
@@ -189,8 +190,8 @@ class CrewRepository {
 
     // Sort: captains first, then by joinedAt
     result.sort((a, b) {
-      if (a.role == 'captain' && b.role != 'captain') return -1;
-      if (a.role != 'captain' && b.role == 'captain') return 1;
+      if (a.role == CrewRole.captain && b.role != CrewRole.captain) return -1;
+      if (a.role != CrewRole.captain && b.role == CrewRole.captain) return 1;
       return a.joinedAt.compareTo(b.joinedAt);
     });
 
@@ -223,7 +224,7 @@ class CrewRepository {
       payloadJson: jsonEncode({
         'crew_id': crewId,
         'user_id': userId,
-        'role': 'member',
+        'role': CrewRole.member,
       }),
     );
   }
@@ -252,8 +253,6 @@ class CrewRepository {
   Future<CrewInfo> joinCrewByCode({
     required String code,
     required String userId,
-    required AppDatabase db,
-    required SupabaseClient client,
   }) async {
     // Look up crew by code (try local first, then remote)
     var crew = await (_db.select(_db.localCrews)
@@ -308,7 +307,7 @@ class CrewRepository {
         payloadJson: jsonEncode({
           'team_id': crew.teamId,
           'user_id': userId,
-          'role': 'member',
+          'role': CrewRole.member,
         }),
       );
     }
@@ -330,9 +329,4 @@ class CrewRepository {
     );
   }
 
-  String _generateInviteCode() {
-    final random = Random.secure();
-    return List.generate(
-        8, (_) => random.nextInt(16).toRadixString(16)).join().toUpperCase();
-  }
 }

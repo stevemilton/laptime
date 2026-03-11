@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/supabase_provider.dart';
 import '../../../core/providers/sync_provider.dart';
-import '../../../features/settings/presentation/settings_screen.dart';
+import '../../../core/providers/preferences_provider.dart';
 import '../data/recording_repository.dart';
 
 /// Provider for the recording repository.

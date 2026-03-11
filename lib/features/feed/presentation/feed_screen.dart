@@ -13,6 +13,7 @@ import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/p1_badge.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../data/feed_repository.dart';
+import '../data/feed_providers.dart';
 import '../data/like_repository.dart';
 import '../../social/data/team_providers.dart';
 import 'comment_sheet.dart';
@@ -22,15 +23,13 @@ import 'sector_sheet.dart';
 final followingFeedProvider = FutureProvider<List<FeedItem>>((ref) async {
   final user = ref.watch(currentUserProvider);
   if (user == null) return [];
-  final client = ref.read(supabaseClientProvider);
-  final repo = FeedRepository(client);
+  final repo = ref.read(feedRepositoryProvider);
   return repo.getFollowingFeed(userId: user.id);
 });
 
 /// Feed provider for the "Nearby" tab.
 final nearbyFeedProvider = FutureProvider<List<FeedItem>>((ref) async {
-  final client = ref.read(supabaseClientProvider);
-  final repo = FeedRepository(client);
+  final repo = ref.read(feedRepositoryProvider);
   return repo.getNearbyFeed();
 });
 
@@ -416,11 +415,19 @@ class _TeamsFeedTab extends ConsumerWidget {
           },
           loading: () =>
               const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Center(child: Text('Error: $e')),
+          error: (_, __) => const EmptyState(
+            icon: LucideIcons.alertCircle,
+            title: 'Something went wrong',
+            subtitle: 'Could not load team feed. Pull to refresh.',
+          ),
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('Error: $e')),
+      error: (_, __) => const EmptyState(
+        icon: LucideIcons.alertCircle,
+        title: 'Something went wrong',
+        subtitle: 'Could not load teams. Pull to refresh.',
+      ),
     );
   }
 }

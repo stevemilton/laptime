@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// A feed item representing a session that appears in the social feed.
@@ -139,9 +138,7 @@ class FeedRepository {
             .eq('is_public', true)
             .order('started_at', ascending: false)
             .range(offset, offset + limit - 1);
-        debugPrint('[Feed] Following full query OK: ${response.length} items');
-      } catch (e) {
-        debugPrint('[Feed] Following full query failed ($e), using base query');
+      } catch (_) {
         response = await _client
             .from('sessions')
             .select(_baseSelect)
@@ -149,7 +146,6 @@ class FeedRepository {
             .eq('is_public', true)
             .order('started_at', ascending: false)
             .range(offset, offset + limit - 1);
-        debugPrint('[Feed] Following base query OK: ${response.length} items');
       }
 
       return response
@@ -158,9 +154,7 @@ class FeedRepository {
                 currentUserId: _currentUserId,
               ))
           .toList();
-    } catch (e, stack) {
-      debugPrint('[Feed] getFollowingFeed ERROR: $e');
-      debugPrint('[Feed] STACK: $stack');
+    } catch (_) {
       return [];
     }
   }
@@ -179,16 +173,13 @@ class FeedRepository {
             .eq('is_public', true)
             .order('started_at', ascending: false)
             .range(offset, offset + limit - 1);
-        debugPrint('[Feed] Nearby full query OK: ${response.length} items');
-      } catch (e) {
-        debugPrint('[Feed] Nearby full query failed ($e), using base query');
+      } catch (_) {
         response = await _client
             .from('sessions')
             .select(_baseSelect)
             .eq('is_public', true)
             .order('started_at', ascending: false)
             .range(offset, offset + limit - 1);
-        debugPrint('[Feed] Nearby base query OK: ${response.length} items');
       }
 
       return response
@@ -197,9 +188,7 @@ class FeedRepository {
                 currentUserId: _currentUserId,
               ))
           .toList();
-    } catch (e, stack) {
-      debugPrint('[Feed] getNearbyFeed ERROR: $e');
-      debugPrint('[Feed] STACK: $stack');
+    } catch (_) {
       return [];
     }
   }
@@ -243,9 +232,7 @@ class FeedRepository {
             .eq('is_public', true)
             .order('started_at', ascending: false)
             .range(offset, offset + limit - 1);
-        debugPrint('[Feed] Teams full query OK: ${response.length} items');
-      } catch (e) {
-        debugPrint('[Feed] Teams full query failed ($e), using base query');
+      } catch (_) {
         response = await _client
             .from('sessions')
             .select(_baseSelect)
@@ -253,7 +240,6 @@ class FeedRepository {
             .eq('is_public', true)
             .order('started_at', ascending: false)
             .range(offset, offset + limit - 1);
-        debugPrint('[Feed] Teams base query OK: ${response.length} items');
       }
 
       return response
@@ -262,9 +248,7 @@ class FeedRepository {
                 currentUserId: _currentUserId,
               ))
           .toList();
-    } catch (e, stack) {
-      debugPrint('[Feed] getTeamsFeed ERROR: $e');
-      debugPrint('[Feed] STACK: $stack');
+    } catch (_) {
       return [];
     }
   }

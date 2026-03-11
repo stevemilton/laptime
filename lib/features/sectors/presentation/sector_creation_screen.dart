@@ -334,7 +334,7 @@ class _SectorCreationScreenState extends ConsumerState<SectorCreationScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: const Text('Could not create sector. Please try again.'),
             backgroundColor: AppColors.red,
           ),
         );

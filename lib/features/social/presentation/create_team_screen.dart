@@ -61,7 +61,7 @@ class _CreateTeamScreenState extends ConsumerState<CreateTeamScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: const Text('Could not create team. Please try again.'),
             backgroundColor: AppColors.red,
           ),
         );

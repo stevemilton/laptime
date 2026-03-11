@@ -115,7 +115,7 @@ class _SessionListTile extends ConsumerWidget {
                     ),
                   const SizedBox(height: 4),
                   Text(
-                    _formatDate(session.startedAt),
+                    FormatUtils.formatShortDate(session.startedAt),
                     style: AppTypography.bodySmall.copyWith(
                       color: AppColors.textTertiary,
                     ),
@@ -149,11 +149,4 @@ class _SessionListTile extends ConsumerWidget {
     );
   }
 
-  String _formatDate(DateTime date) {
-    final months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-    ];
-    return '${date.day} ${months[date.month - 1]} ${date.year}';
-  }
 }

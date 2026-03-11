@@ -5,11 +5,11 @@ import 'package:lucide_icons/lucide_icons.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/supabase_provider.dart';
 import '../../../core/widgets/app_avatar.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../data/follow_repository.dart';
+import '../data/follow_providers.dart';
 
 /// Screen for searching drivers and managing follows.
 class FollowingScreen extends ConsumerStatefulWidget {
@@ -39,9 +39,7 @@ class _FollowingScreenState extends ConsumerState<FollowingScreen> {
 
     setState(() => _isSearching = true);
 
-    final db = ref.read(databaseProvider);
-    final client = ref.read(supabaseClientProvider);
-    final repo = FollowRepository(db, client);
+    final repo = ref.read(followRepositoryProvider);
     final results = await repo.searchUsers(query);
 
     // Check follow status for results
@@ -68,9 +66,7 @@ class _FollowingScreenState extends ConsumerState<FollowingScreen> {
     final user = ref.read(currentUserProvider);
     if (user == null) return;
 
-    final db = ref.read(databaseProvider);
-    final client = ref.read(supabaseClientProvider);
-    final repo = FollowRepository(db, client);
+    final repo = ref.read(followRepositoryProvider);
 
     final isCurrentlyFollowing = _followedIds.contains(targetId);
 
@@ -86,7 +82,7 @@ class _FollowingScreenState extends ConsumerState<FollowingScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: const Text('Something went wrong. Please try again.'),
             backgroundColor: AppColors.red,
           ),
         );

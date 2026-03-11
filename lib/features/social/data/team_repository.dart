@@ -1,9 +1,10 @@
 import 'dart:convert';
-import 'dart:math';
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/database/app_database.dart';
+import '../../../core/constants/role_constants.dart';
+import '../../../core/utils/invite_code_utils.dart';
 
 const _uuid = Uuid();
 
@@ -198,8 +199,8 @@ class TeamRepository {
 
     // Sort: admins first, then by joinedAt
     result.sort((a, b) {
-      if (a.role == 'admin' && b.role != 'admin') return -1;
-      if (a.role != 'admin' && b.role == 'admin') return 1;
+      if (a.role == TeamRole.admin && b.role != TeamRole.admin) return -1;
+      if (a.role != TeamRole.admin && b.role == TeamRole.admin) return 1;
       return a.joinedAt.compareTo(b.joinedAt);
     });
 
@@ -217,7 +218,7 @@ class TeamRepository {
   Future<int> getAdminCount(String teamId) async {
     final admins = await (_db.select(_db.localTeamMembers)
           ..where(
-              (t) => t.teamId.equals(teamId) & t.role.equals('admin')))
+              (t) => t.teamId.equals(teamId) & t.role.equals(TeamRole.admin)))
         .get();
     return admins.length;
   }
@@ -237,7 +238,7 @@ class TeamRepository {
     }
 
     final id = _uuid.v4();
-    final code = _generateInviteCode();
+    final code = generateInviteCode();
 
     await _db.into(_db.localTeams).insert(
       LocalTeamsCompanion.insert(
@@ -254,7 +255,7 @@ class TeamRepository {
       LocalTeamMembersCompanion.insert(
         teamId: id,
         userId: createdBy,
-        role: const Value('admin'),
+        role: const Value(TeamRole.admin),
       ),
     );
 
@@ -278,7 +279,7 @@ class TeamRepository {
       payloadJson: jsonEncode({
         'team_id': id,
         'user_id': createdBy,
-        'role': 'admin',
+        'role': TeamRole.admin,
       }),
     );
 
@@ -289,7 +290,7 @@ class TeamRepository {
       createdBy: createdBy,
       location: location,
       memberCount: 1,
-      currentUserRole: 'admin',
+      currentUserRole: TeamRole.admin,
     );
   }
 
@@ -443,7 +444,7 @@ class TeamRepository {
       payloadJson: jsonEncode({
         'team_id': team.id,
         'user_id': userId,
-        'role': 'member',
+        'role': TeamRole.member,
       }),
     );
   }
@@ -453,7 +454,7 @@ class TeamRepository {
     required String userId,
   }) async {
     final role = await getUserRoleInTeam(teamId, userId);
-    if (role == 'admin') {
+    if (role == TeamRole.admin) {
       final adminCount = await getAdminCount(teamId);
       if (adminCount <= 1) {
         throw Exception(
@@ -461,49 +462,7 @@ class TeamRepository {
       }
     }
 
-    // Remove from all crews in this team
-    final crews = await (_db.select(_db.localCrews)
-          ..where((t) => t.teamId.equals(teamId)))
-        .get();
-
-    for (final crew in crews) {
-      final crewMembership = await (_db.select(_db.localCrewMembers)
-            ..where(
-                (t) => t.crewId.equals(crew.id) & t.userId.equals(userId)))
-          .getSingleOrNull();
-
-      if (crewMembership != null) {
-        await (_db.delete(_db.localCrewMembers)
-              ..where((t) =>
-                  t.crewId.equals(crew.id) & t.userId.equals(userId)))
-            .go();
-
-        await _db.enqueueSync(
-          targetTable: 'crew_members',
-          operation: 'delete',
-          recordId: '${crew.id}_$userId',
-          payloadJson: jsonEncode({
-            'crew_id': crew.id,
-            'user_id': userId,
-          }),
-        );
-      }
-    }
-
-    await (_db.delete(_db.localTeamMembers)
-          ..where(
-              (t) => t.teamId.equals(teamId) & t.userId.equals(userId)))
-        .go();
-
-    await _db.enqueueSync(
-      targetTable: 'team_members',
-      operation: 'delete',
-      recordId: '${teamId}_$userId',
-      payloadJson: jsonEncode({
-        'team_id': teamId,
-        'user_id': userId,
-      }),
-    );
+    await _removeUserFromTeamAndCrews(teamId: teamId, userId: userId);
   }
 
   Future<void> removeMember({
@@ -514,7 +473,16 @@ class TeamRepository {
     if (userId == removedByUserId) {
       throw Exception('Cannot remove yourself. Use Leave Team instead.');
     }
+    await _requireAdmin(teamId, removedByUserId);
 
+    await _removeUserFromTeamAndCrews(teamId: teamId, userId: userId);
+  }
+
+  /// Removes a user from all crews in a team, then removes team membership.
+  Future<void> _removeUserFromTeamAndCrews({
+    required String teamId,
+    required String userId,
+  }) async {
     final crews = await (_db.select(_db.localCrews)
           ..where((t) => t.teamId.equals(teamId)))
         .get();
@@ -554,10 +522,20 @@ class TeamRepository {
 
   // ── Role Management ──
 
+  /// Verify the caller is a team admin. Throws if not.
+  Future<void> _requireAdmin(String teamId, String callerUserId) async {
+    final role = await getUserRoleInTeam(teamId, callerUserId);
+    if (role != TeamRole.admin) {
+      throw Exception('Only team admins can perform this action');
+    }
+  }
+
   Future<void> promoteToAdmin({
     required String teamId,
     required String userId,
+    required String callerUserId,
   }) async {
+    await _requireAdmin(teamId, callerUserId);
     final adminCount = await getAdminCount(teamId);
     if (adminCount >= 3) {
       throw Exception('Maximum 3 admins per team');
@@ -575,7 +553,7 @@ class TeamRepository {
       payloadJson: jsonEncode({
         'team_id': teamId,
         'user_id': userId,
-        'role': 'admin',
+        'role': TeamRole.admin,
       }),
     );
   }
@@ -583,7 +561,9 @@ class TeamRepository {
   Future<void> demoteToMember({
     required String teamId,
     required String userId,
+    required String callerUserId,
   }) async {
+    await _requireAdmin(teamId, callerUserId);
     final adminCount = await getAdminCount(teamId);
     if (adminCount <= 1) {
       throw Exception(
@@ -593,7 +573,7 @@ class TeamRepository {
     await (_db.update(_db.localTeamMembers)
           ..where(
               (t) => t.teamId.equals(teamId) & t.userId.equals(userId)))
-        .write(const LocalTeamMembersCompanion(role: Value('member')));
+        .write(const LocalTeamMembersCompanion(role: Value(TeamRole.member)));
 
     await _db.enqueueSync(
       targetTable: 'team_members',
@@ -602,7 +582,7 @@ class TeamRepository {
       payloadJson: jsonEncode({
         'team_id': teamId,
         'user_id': userId,
-        'role': 'member',
+        'role': TeamRole.member,
       }),
     );
   }
@@ -610,7 +590,7 @@ class TeamRepository {
   // ── Invite Code ──
 
   Future<String> regenerateInviteCode(String teamId) async {
-    final newCode = _generateInviteCode();
+    final newCode = generateInviteCode();
 
     await (_db.update(_db.localTeams)..where((t) => t.id.equals(teamId)))
         .write(LocalTeamsCompanion(code: Value(newCode)));
@@ -669,7 +649,7 @@ class TeamRepository {
             .from('team_join_requests')
             .select('team_id')
             .eq('user_id', currentUserId)
-            .eq('status', 'pending');
+            .eq('status', JoinRequestStatus.pending);
         pendingTeamIds =
             (requests as List).map((r) => r['team_id'] as String).toSet();
       }
@@ -678,9 +658,9 @@ class TeamRepository {
         final teamId = json['id'] as String;
         String? status;
         if (memberTeamIds.contains(teamId)) {
-          status = 'member';
+          status = MembershipStatus.member;
         } else if (pendingTeamIds.contains(teamId)) {
-          status = 'pending';
+          status = MembershipStatus.pending;
         }
 
         final countData = json['team_members'] as List?;
@@ -723,7 +703,7 @@ class TeamRepository {
           ..where((t) =>
               t.teamId.equals(teamId) &
               t.userId.equals(userId) &
-              t.status.equals('pending')))
+              t.status.equals(JoinRequestStatus.pending)))
         .getSingleOrNull();
 
     if (existing != null) {
@@ -749,7 +729,7 @@ class TeamRepository {
         'id': id,
         'team_id': teamId,
         'user_id': userId,
-        'status': 'pending',
+        'status': JoinRequestStatus.pending,
         if (message != null) 'message': message,
       }),
     );
@@ -762,7 +742,7 @@ class TeamRepository {
     await (_db.update(_db.localTeamJoinRequests)
           ..where((t) => t.id.equals(requestId) & t.userId.equals(userId)))
         .write(const LocalTeamJoinRequestsCompanion(
-      status: Value('cancelled'),
+      status: Value(JoinRequestStatus.cancelled),
     ));
 
     await _db.enqueueSync(
@@ -771,7 +751,7 @@ class TeamRepository {
       recordId: requestId,
       payloadJson: jsonEncode({
         'id': requestId,
-        'status': 'cancelled',
+        'status': JoinRequestStatus.cancelled,
       }),
     );
   }
@@ -783,7 +763,7 @@ class TeamRepository {
           .from('team_join_requests')
           .select('*, profiles!inner(*)')
           .eq('team_id', teamId)
-          .eq('status', 'pending')
+          .eq('status', JoinRequestStatus.pending)
           .order('requested_at');
 
       if (remoteRequests is List && remoteRequests.isNotEmpty) {
@@ -814,7 +794,7 @@ class TeamRepository {
     // Local fallback
     final requests = await (_db.select(_db.localTeamJoinRequests)
           ..where((t) =>
-              t.teamId.equals(teamId) & t.status.equals('pending'))
+              t.teamId.equals(teamId) & t.status.equals(JoinRequestStatus.pending))
           ..orderBy([(t) => OrderingTerm.asc(t.requestedAt)]))
         .get();
 
@@ -846,7 +826,8 @@ class TeamRepository {
         .getSingleOrNull();
 
     if (request == null) throw Exception('Join request not found');
-    if (request.status != 'pending') {
+    await _requireAdmin(request.teamId, reviewerId);
+    if (request.status != JoinRequestStatus.pending) {
       throw Exception('Request is no longer pending');
     }
 
@@ -855,7 +836,7 @@ class TeamRepository {
     await (_db.update(_db.localTeamJoinRequests)
           ..where((t) => t.id.equals(requestId)))
         .write(LocalTeamJoinRequestsCompanion(
-      status: const Value('approved'),
+      status: const Value(JoinRequestStatus.approved),
       reviewedBy: Value(reviewerId),
       reviewedAt: Value(now),
     ));
@@ -873,7 +854,7 @@ class TeamRepository {
       recordId: requestId,
       payloadJson: jsonEncode({
         'id': requestId,
-        'status': 'approved',
+        'status': JoinRequestStatus.approved,
         'reviewed_by': reviewerId,
         'reviewed_at': now.toIso8601String(),
       }),
@@ -886,7 +867,7 @@ class TeamRepository {
       payloadJson: jsonEncode({
         'team_id': request.teamId,
         'user_id': request.userId,
-        'role': 'member',
+        'role': TeamRole.member,
       }),
     );
   }
@@ -900,12 +881,20 @@ class TeamRepository {
       throw ArgumentError('Rejection reason must be at most 500 characters');
     }
 
+    // Verify the reviewer is a team admin
+    final request = await (_db.select(_db.localTeamJoinRequests)
+          ..where((t) => t.id.equals(requestId)))
+        .getSingleOrNull();
+    if (request != null) {
+      await _requireAdmin(request.teamId, reviewerId);
+    }
+
     final now = DateTime.now();
 
     await (_db.update(_db.localTeamJoinRequests)
           ..where((t) => t.id.equals(requestId)))
         .write(LocalTeamJoinRequestsCompanion(
-      status: const Value('rejected'),
+      status: const Value(JoinRequestStatus.rejected),
       reviewedBy: Value(reviewerId),
       reviewedAt: Value(now),
       rejectionReason: Value(reason),
@@ -917,7 +906,7 @@ class TeamRepository {
       recordId: requestId,
       payloadJson: jsonEncode({
         'id': requestId,
-        'status': 'rejected',
+        'status': JoinRequestStatus.rejected,
         'reviewed_by': reviewerId,
         'reviewed_at': now.toIso8601String(),
         if (reason != null) 'rejection_reason': reason,
@@ -937,14 +926,9 @@ class TeamRepository {
   Future<int> _countPendingRequests(String teamId) async {
     final requests = await (_db.select(_db.localTeamJoinRequests)
           ..where((t) =>
-              t.teamId.equals(teamId) & t.status.equals('pending')))
+              t.teamId.equals(teamId) & t.status.equals(JoinRequestStatus.pending)))
         .get();
     return requests.length;
   }
 
-  String _generateInviteCode() {
-    final random = Random.secure();
-    return List.generate(
-        8, (_) => random.nextInt(16).toRadixString(16)).join().toUpperCase();
-  }
 }

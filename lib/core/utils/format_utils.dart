@@ -1,3 +1,15 @@
+/// Unit system for weather and measurement formatting.
+enum UnitSystem {
+  metric,
+  imperial;
+
+  /// Legacy string representation for backward compatibility.
+  String get label => switch (this) {
+        UnitSystem.metric => 'Metric',
+        UnitSystem.imperial => 'Imperial',
+      };
+}
+
 /// Formatting utilities for lap times, durations, weather data, etc.
 abstract final class FormatUtils {
   /// Formats duration in milliseconds to lap time string.
@@ -33,9 +45,8 @@ abstract final class FormatUtils {
   }
 
   /// Formats temperature with degree symbol, respecting unit preference.
-  /// [units] should be 'Metric' or 'Imperial'.
-  static String formatTemp(double tempCelsius, {String units = 'Metric'}) {
-    if (units == 'Imperial') {
+  static String formatTemp(double tempCelsius, {UnitSystem units = UnitSystem.metric}) {
+    if (units == UnitSystem.imperial) {
       final tempF = (tempCelsius * 9 / 5) + 32;
       return '${tempF.round()}\u00B0F';
     }
@@ -43,9 +54,9 @@ abstract final class FormatUtils {
   }
 
   /// Formats wind speed, respecting unit preference.
-  /// Input is always m/s. [units] should be 'Metric' or 'Imperial'.
-  static String formatWindSpeed(double speedMs, {String units = 'Metric'}) {
-    if (units == 'Imperial') {
+  /// Input is always m/s.
+  static String formatWindSpeed(double speedMs, {UnitSystem units = UnitSystem.metric}) {
+    if (units == UnitSystem.imperial) {
       final mph = (speedMs * 2.237).round();
       return '$mph mph';
     }
@@ -54,9 +65,9 @@ abstract final class FormatUtils {
   }
 
   /// Formats pressure, respecting unit preference.
-  /// Input is always hPa. [units] should be 'Metric' or 'Imperial'.
-  static String formatPressure(double hPa, {String units = 'Metric'}) {
-    if (units == 'Imperial') {
+  /// Input is always hPa.
+  static String formatPressure(double hPa, {UnitSystem units = UnitSystem.metric}) {
+    if (units == UnitSystem.imperial) {
       final inHg = (hPa * 0.02953).toStringAsFixed(2);
       return '$inHg inHg';
     }
@@ -78,5 +89,15 @@ abstract final class FormatUtils {
     final d = dateTime.day.toString().padLeft(2, '0');
     final m = dateTime.month.toString().padLeft(2, '0');
     return '$d/$m/${dateTime.year}';
+  }
+
+  /// Formats a DateTime as a short readable date.
+  /// e.g. "5 Mar 2026"
+  static String formatShortDate(DateTime dateTime) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    return '${dateTime.day} ${months[dateTime.month - 1]} ${dateTime.year}';
   }
 }

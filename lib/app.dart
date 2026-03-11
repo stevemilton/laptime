@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/theme/app_theme.dart';
 import 'core/router/app_router.dart';
-import 'core/providers/database_provider.dart';
-import 'core/providers/supabase_provider.dart';
 import 'core/providers/sync_provider.dart';
-import 'features/profile/data/profile_repository.dart';
+import 'features/profile/data/profile_providers.dart';
+import 'features/profile/data/ensure_local_profile.dart';
 
 class TestTrackApp extends ConsumerStatefulWidget {
   const TestTrackApp({super.key});
@@ -38,24 +36,8 @@ class _TestTrackAppState extends ConsumerState<TestTrackApp> {
   /// If a Supabase session already exists (restored from storage),
   /// ensure the local Drift profile row exists.
   Future<void> _ensureProfileOnStartup() async {
-    try {
-      final user = Supabase.instance.client.auth.currentUser;
-      if (user == null) return;
-
-      final db = ref.read(databaseProvider);
-      final client = ref.read(supabaseClientProvider);
-      final repo = ProfileRepository(db, client);
-
-      final meta = user.userMetadata;
-      final name = meta?['full_name'] as String? ??
-          meta?['name'] as String? ??
-          user.email?.split('@').first ??
-          'Driver';
-
-      await repo.ensureLocalProfile(userId: user.id, displayName: name);
-    } catch (e) {
-      debugPrint('Failed to ensure local profile on startup: $e');
-    }
+    final repo = ref.read(profileRepositoryProvider);
+    await ensureLocalProfile(repo);
   }
 
   @override

@@ -3,61 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/providers/preferences_provider.dart';
 import '../../../core/providers/sync_provider.dart';
 import '../../../core/services/sync_service.dart';
-
-// ── Preference keys ──
-
-const _kUnitsKey = 'pref_units';
-const _kDefaultPrivacyKey = 'pref_default_privacy';
-
-// ── Preference providers ──
-
-/// Provider for the shared preferences instance.
-final _sharedPrefsProvider = FutureProvider<SharedPreferences>((ref) async {
-  return SharedPreferences.getInstance();
-});
-
-/// Provider for the user's preferred unit system.
-final unitsProvider = StateNotifierProvider<_UnitsNotifier, String>((ref) {
-  final prefsAsync = ref.watch(_sharedPrefsProvider);
-  final prefs = prefsAsync.value;
-  final initial = prefs?.getString(_kUnitsKey) ?? 'Metric';
-  return _UnitsNotifier(prefs, initial);
-});
-
-class _UnitsNotifier extends StateNotifier<String> {
-  _UnitsNotifier(this._prefs, String initial) : super(initial);
-  final SharedPreferences? _prefs;
-
-  void set(String value) {
-    state = value;
-    _prefs?.setString(_kUnitsKey, value);
-  }
-}
-
-/// Provider for the default session privacy setting.
-final defaultPrivacyProvider =
-    StateNotifierProvider<_PrivacyNotifier, String>((ref) {
-  final prefsAsync = ref.watch(_sharedPrefsProvider);
-  final prefs = prefsAsync.value;
-  final initial = prefs?.getString(_kDefaultPrivacyKey) ?? 'Public';
-  return _PrivacyNotifier(prefs, initial);
-});
-
-class _PrivacyNotifier extends StateNotifier<String> {
-  _PrivacyNotifier(this._prefs, String initial) : super(initial);
-  final SharedPreferences? _prefs;
-
-  void set(String value) {
-    state = value;
-    _prefs?.setString(_kDefaultPrivacyKey, value);
-  }
-}
+import '../../../core/utils/format_utils.dart';
+import '../../../core/widgets/section_header.dart';
 
 /// Provider for app version string.
 final appVersionProvider = FutureProvider<String>((ref) async {
@@ -91,7 +44,7 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: 8),
 
           // Sync status section
-          _SectionTitle(title: 'SYNC'),
+          const SectionHeader(title: 'SYNC', padding: EdgeInsets.fromLTRB(20, 20, 20, 8)),
           _SettingsTile(
             icon: _syncIcon(syncStatus),
             iconColor: _syncColor(syncStatus),
@@ -113,7 +66,7 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(indent: 56),
 
           // Account section
-          _SectionTitle(title: 'ACCOUNT'),
+          const SectionHeader(title: 'ACCOUNT', padding: EdgeInsets.fromLTRB(20, 20, 20, 8)),
           _SettingsTile(
             icon: LucideIcons.user,
             title: 'Edit Profile',
@@ -129,11 +82,11 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(indent: 56),
 
           // Units & preferences
-          _SectionTitle(title: 'PREFERENCES'),
+          const SectionHeader(title: 'PREFERENCES', padding: EdgeInsets.fromLTRB(20, 20, 20, 8)),
           _SettingsTile(
             icon: LucideIcons.ruler,
             title: 'Units',
-            subtitle: units,
+            subtitle: units.label,
             onTap: () => _showUnitPicker(context, ref, units),
           ),
           _SettingsTile(
@@ -146,7 +99,7 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(indent: 56),
 
           // Legal section
-          _SectionTitle(title: 'LEGAL'),
+          const SectionHeader(title: 'LEGAL', padding: EdgeInsets.fromLTRB(20, 20, 20, 8)),
           _SettingsTile(
             icon: LucideIcons.shield,
             title: 'Privacy Policy',
@@ -166,7 +119,7 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(indent: 56),
 
           // About section
-          _SectionTitle(title: 'ABOUT'),
+          const SectionHeader(title: 'ABOUT', padding: EdgeInsets.fromLTRB(20, 20, 20, 8)),
           _SettingsTile(
             icon: LucideIcons.info,
             title: 'Version',
@@ -183,7 +136,7 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
-  void _showUnitPicker(BuildContext context, WidgetRef ref, String current) {
+  void _showUnitPicker(BuildContext context, WidgetRef ref, UnitSystem current) {
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: AppColors.white,
@@ -203,7 +156,7 @@ class SettingsScreen extends ConsumerWidget {
                   child: Text('Units', style: AppTypography.headlineSmall),
                 ),
                 const SizedBox(height: 8),
-                for (final option in ['Metric', 'Imperial'])
+                for (final option in UnitSystem.values)
                   ListTile(
                     leading: Icon(
                       option == current
@@ -214,9 +167,9 @@ class SettingsScreen extends ConsumerWidget {
                           : AppColors.textTertiary,
                       size: 20,
                     ),
-                    title: Text(option, style: AppTypography.bodyMedium),
+                    title: Text(option.label, style: AppTypography.bodyMedium),
                     subtitle: Text(
-                      option == 'Metric'
+                      option == UnitSystem.metric
                           ? 'km/h, km, \u00B0C, hPa'
                           : 'mph, mi, \u00B0F, inHg',
                       style: AppTypography.bodySmall
@@ -320,23 +273,6 @@ class SettingsScreen extends ConsumerWidget {
       case SyncStatus.error:
         return 'Sync Error';
     }
-  }
-}
-
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle({required this.title});
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
-      child: Text(
-        title,
-        style: AppTypography.sectionLabel,
-      ),
-    );
   }
 }
 

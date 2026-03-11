@@ -10,6 +10,7 @@ import '../../../core/router/route_names.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/string_utils.dart';
 import '../../../core/widgets/app_avatar.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/empty_state.dart';
@@ -563,7 +564,7 @@ class _SectorsScreenState extends ConsumerState<SectorsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: const Text('Could not delete sector. Please try again.'),
             backgroundColor: AppColors.red,
           ),
         );
@@ -728,7 +729,7 @@ class _P1SpotlightCard extends StatelessWidget {
             children: [
               AppAvatar(
                 imageUrl: entry.avatarUrl,
-                initials: _initials(entry.displayName),
+                initials: getInitials(entry.displayName),
                 size: 44,
               ),
               const SizedBox(width: 12),
@@ -808,7 +809,7 @@ class _LeaderboardRow extends StatelessWidget {
           // Avatar
           AppAvatar(
             imageUrl: entry.avatarUrl,
-            initials: _initials(entry.displayName),
+            initials: getInitials(entry.displayName),
             size: 32,
           ),
           const SizedBox(width: 10),
@@ -1033,11 +1034,3 @@ class _SectorCard extends StatelessWidget {
   }
 }
 
-/// Extract initials from a display name.
-String _initials(String name) {
-  final parts = name.trim().split(RegExp(r'\s+'));
-  if (parts.length >= 2) {
-    return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
-  }
-  return parts.first.isNotEmpty ? parts.first[0].toUpperCase() : '';
-}

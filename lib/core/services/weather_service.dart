@@ -211,16 +211,17 @@ class WeatherService {
     return WeatherResult(error: 'Weather unavailable');
   }
 
-  /// Simple fetch - returns null on failure (used by recording repository).
-  Future<WeatherData?> fetchWeather({
+  /// Fetch weather, returning a WeatherResult with data and/or error info.
+  ///
+  /// Alias for [fetchWeatherWithResult] - standardizes on a single return type.
+  Future<WeatherResult> fetchWeather({
     required double latitude,
     required double longitude,
-  }) async {
-    final result = await fetchWeatherWithResult(
+  }) {
+    return fetchWeatherWithResult(
       latitude: latitude,
       longitude: longitude,
     );
-    return result.data;
   }
 
   void dispose() {

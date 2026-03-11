@@ -1,17 +1,14 @@
 import 'dart:convert';
 import 'package:drift/drift.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/database/app_database.dart';
 
 /// Repository for user profile operations.
 ///
 /// Reads from local Drift DB (offline-first), writes enqueue sync to Supabase.
 class ProfileRepository {
-  ProfileRepository(this._db, this._client);
+  ProfileRepository(this._db);
 
   final AppDatabase _db;
-  // ignore: unused_field
-  final SupabaseClient _client; // Used for future avatar upload
 
   /// Get the current user's profile from local DB.
   Future<LocalProfile?> getProfile(String userId) {

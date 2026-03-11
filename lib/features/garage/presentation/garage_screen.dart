@@ -8,6 +8,7 @@ import '../../../core/database/app_database.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/utils/image_utils.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../profile/presentation/profile_screen.dart';
 
@@ -79,7 +80,7 @@ class _GarageCarTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasImage = _imageFileExists(car.imageUrl);
+    final hasImage = imageFileExists(car.imageUrl);
     final isKart = car.carClass == 'Kart';
 
     return GestureDetector(
@@ -181,12 +182,6 @@ class _GarageCarTile extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  bool _imageFileExists(String? url) {
-    if (url == null || url.isEmpty) return false;
-    if (url.startsWith('http')) return true;
-    return File(url).existsSync();
   }
 
   Widget _buildPlaceholder(bool isKart) {

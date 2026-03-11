@@ -148,7 +148,6 @@ class RecordingRepository {
       _circuitBestMs = await _loadCircuitBest(userId, circuitId);
     }
 
-    // Write session to local DB
     await _db.into(_db.localSessions).insert(
       LocalSessionsCompanion.insert(
         id: _sessionId!,
@@ -159,17 +158,13 @@ class RecordingRepository {
       ),
     );
 
-    // Start GPS
     await _locationService.startRecording();
     _gpsSub = _locationService.positionStream.listen(_onGpsPoint);
 
-    // Start sensors
     _sensorService.startRecording();
 
-    // Fetch weather (fire-and-forget)
     _fetchWeather();
 
-    // Start elapsed timer (updates UI every 100ms)
     _elapsedTimer = Timer.periodic(
       const Duration(milliseconds: 100),
       (_) => _emitState(),
@@ -206,7 +201,6 @@ class RecordingRepository {
       await _completeLap(DateTime.now());
     }
 
-    // Update session end time
     await (_db.update(_db.localSessions)
           ..where((t) => t.id.equals(sessionId)))
         .write(LocalSessionsCompanion(
@@ -234,13 +228,11 @@ class RecordingRepository {
       );
     }
 
-    // Stop services
     await _locationService.stopRecording();
     _sensorService.stopRecording();
     _gpsSub?.cancel();
     _elapsedTimer?.cancel();
 
-    // Reset state
     _sessionId = null;
     _sessionStart = null;
     _lapStart = null;
@@ -254,7 +246,6 @@ class RecordingRepository {
     _currentLapPoints.add(point);
     _allPoints.add(point);
 
-    // Check for automatic lap crossing
     final crossing = _lapDetection.processPoint(point);
     if (crossing != null) {
       _completeLap(crossing.crossingTime);
@@ -280,7 +271,6 @@ class RecordingRepository {
 
     final lapId = _uuid.v4();
 
-    // Save lap to DB
     await _db.into(_db.localLaps).insert(
       LocalLapsCompanion.insert(
         id: lapId,
@@ -292,7 +282,6 @@ class RecordingRepository {
       ),
     );
 
-    // Save sensor data for this lap
     final sensorSnapshot = _sensorService.captureLapData();
     await _db.into(_db.localLapSensorData).insert(
       LocalLapSensorDataCompanion.insert(
@@ -350,7 +339,6 @@ class RecordingRepository {
       );
     }
 
-    // Reset for next lap
     _currentLapPoints.clear();
     _lapStart = crossingTime;
     _emitState();
@@ -384,10 +372,11 @@ class RecordingRepository {
     final point = _locationService.lastPoint;
     if (point == null) return;
 
-    _weather = await _weatherService.fetchWeather(
+    final result = await _weatherService.fetchWeather(
       latitude: point.latitude,
       longitude: point.longitude,
     );
+    _weather = result.data;
     _emitState();
   }
 

@@ -8,6 +8,7 @@ import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/app_avatar.dart';
 import '../../../core/widgets/app_pill.dart';
 import '../../../core/widgets/empty_state.dart';
+import '../../../core/constants/role_constants.dart';
 import '../data/team_providers.dart';
 import '../data/team_repository.dart';
 
@@ -73,7 +74,11 @@ class TeamsScreen extends ConsumerWidget {
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (_, __) => const EmptyState(
+          icon: LucideIcons.alertCircle,
+          title: 'Something went wrong',
+          subtitle: 'Could not load teams. Pull to refresh.',
+        ),
       ),
     );
   }
@@ -143,11 +148,11 @@ class _TeamCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          if (team.currentUserRole == 'admin') ...[
+          if (team.currentUserRole == TeamRole.admin) ...[
             AppPill.filled(label: 'Admin'),
             const SizedBox(width: 8),
           ],
-          if (team.currentUserRole == 'admin' &&
+          if (team.currentUserRole == TeamRole.admin &&
               team.pendingRequestCount > 0) ...[
             Container(
               padding: const EdgeInsets.all(6),

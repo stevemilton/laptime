@@ -227,7 +227,7 @@ class SectorRepository {
   ///
   /// Returns the computed duration in milliseconds, or null if the
   /// trace doesn't cross both sector boundaries.
-  Future<int?> computeSectorTimes(String sectorId, String lapId) async {
+  Future<int?> saveSectorTime(String sectorId, String lapId) async {
     // Get the sector definition
     final sector = await (_db.select(_db.localSectors)
           ..where((t) => t.id.equals(sectorId)))
@@ -295,7 +295,7 @@ class SectorRepository {
   }
 
   /// Compute sector times for all laps at the sector's circuit.
-  Future<void> batchComputeSectorTimes(String sectorId) async {
+  Future<void> persistSectorTimesForCircuit(String sectorId) async {
     final sector = await (_db.select(_db.localSectors)
           ..where((t) => t.id.equals(sectorId)))
         .getSingleOrNull();
@@ -318,7 +318,7 @@ class SectorRepository {
             .getSingleOrNull();
 
         if (existing == null) {
-          await computeSectorTimes(sectorId, lap.id);
+          await saveSectorTime(sectorId, lap.id);
         }
       }
     }

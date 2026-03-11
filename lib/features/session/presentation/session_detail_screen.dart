@@ -7,11 +7,12 @@ import 'package:intl/intl.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../../core/database/app_database.dart';
+import '../../../core/services/weather_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/format_utils.dart';
 import '../../../core/widgets/widgets.dart';
-import '../../../features/settings/presentation/settings_screen.dart';
+import '../../../core/providers/preferences_provider.dart';
 import '../data/session_repository.dart';
 
 /// Session detail view.
@@ -222,41 +223,15 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
     try {
       final raw = jsonDecode(weatherJson) as Map<String, dynamic>;
 
-      // Normalize: support flat format (new) and raw API formats (old)
-      double? temp;
-      double? wind;
-      double? press;
-      int? humid;
-
-      if (raw.containsKey('temp') && raw['temp'] is num) {
-        // Flat / normalized format
-        temp = (raw['temp'] as num).toDouble();
-        wind = (raw['wind_speed'] as num?)?.toDouble();
-        press = (raw['pressure'] as num?)?.toDouble();
-        humid = (raw['humidity'] as num?)?.toInt();
-      } else if (raw.containsKey('current')) {
-        // One Call 3.0 raw format
-        final c = raw['current'] as Map<String, dynamic>? ?? {};
-        temp = (c['temp'] as num?)?.toDouble();
-        wind = (c['wind_speed'] as num?)?.toDouble();
-        press = (c['pressure'] as num?)?.toDouble();
-        humid = (c['humidity'] as num?)?.toInt();
-      } else if (raw.containsKey('main')) {
-        // Current Weather 2.5 raw format
-        final m = raw['main'] as Map<String, dynamic>? ?? {};
-        final w = raw['wind'] as Map<String, dynamic>? ?? {};
-        temp = (m['temp'] as num?)?.toDouble();
-        wind = (w['speed'] as num?)?.toDouble();
-        press = (m['pressure'] as num?)?.toDouble();
-        humid = (m['humidity'] as num?)?.toInt();
-      }
+      // WeatherData.fromJson auto-detects all formats (flat, One Call 3.0, Current 2.5)
+      final weather = WeatherData.fromJson(raw);
 
       final units = ref.watch(unitsProvider);
       return WeatherStrip(
-        temperature: temp != null ? FormatUtils.formatTemp(temp, units: units) : null,
-        windSpeed: wind != null ? FormatUtils.formatWindSpeed(wind, units: units) : null,
-        pressure: press != null ? FormatUtils.formatPressure(press, units: units) : null,
-        trackCondition: humid != null ? '$humid%' : null,
+        temperature: FormatUtils.formatTemp(weather.tempCelsius, units: units),
+        windSpeed: FormatUtils.formatWindSpeed(weather.windSpeed, units: units),
+        pressure: FormatUtils.formatPressure(weather.pressure, units: units),
+        trackCondition: '${weather.humidity}%',
       );
     } catch (_) {
       return const SizedBox.shrink();

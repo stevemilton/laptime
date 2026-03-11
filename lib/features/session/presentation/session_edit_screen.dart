@@ -1,4 +1,3 @@
-import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,12 +5,12 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../../core/database/app_database.dart';
-import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/supabase_provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/widgets.dart';
+import '../../garage/data/car_repository.dart';
 import '../data/session_repository.dart';
 
 /// Post-session edit screen.
@@ -69,12 +68,9 @@ class _SessionEditScreenState extends ConsumerState<SessionEditScreen> {
     final session = await repo.getSession(widget.sessionId);
     if (session == null || !mounted) return;
 
-    // Load user's cars
-    final db = ref.read(databaseProvider);
-    final cars = await (db.select(db.localCars)
-          ..where((t) => t.userId.equals(user?.id ?? ''))
-          ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
-        .get();
+    // Load user's cars via repository
+    final carRepo = ref.read(carRepositoryProvider);
+    final cars = await carRepo.getUserCars(user?.id ?? '');
 
     if (!mounted) return;
 
@@ -209,7 +205,7 @@ class _SessionEditScreenState extends ConsumerState<SessionEditScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         children: [
           // Circuit / Track name
-          _buildSectionLabel('CIRCUIT / TRACK'),
+          const SectionHeader(title: 'CIRCUIT / TRACK', padding: EdgeInsets.zero),
           const SizedBox(height: 8),
           TextFormField(
             controller: _circuitNameController,
@@ -224,13 +220,13 @@ class _SessionEditScreenState extends ConsumerState<SessionEditScreen> {
           const SizedBox(height: 24),
 
           // Car picker
-          _buildSectionLabel('CAR'),
+          const SectionHeader(title: 'CAR', padding: EdgeInsets.zero),
           const SizedBox(height: 8),
           _buildCarPicker(),
           const SizedBox(height: 24),
 
           // Track condition
-          _buildSectionLabel('TRACK CONDITION'),
+          const SectionHeader(title: 'TRACK CONDITION', padding: EdgeInsets.zero),
           const SizedBox(height: 8),
           TrackConditionSelector(
             selected: _trackCondition,
@@ -239,13 +235,13 @@ class _SessionEditScreenState extends ConsumerState<SessionEditScreen> {
           const SizedBox(height: 24),
 
           // Tyre info
-          _buildSectionLabel('TYRE INFO'),
+          const SectionHeader(title: 'TYRE INFO', padding: EdgeInsets.zero),
           const SizedBox(height: 8),
           _buildTyreFields(),
           const SizedBox(height: 24),
 
           // Setup notes
-          _buildSectionLabel('SETUP NOTES'),
+          const SectionHeader(title: 'SETUP NOTES', padding: EdgeInsets.zero),
           const SizedBox(height: 8),
           _buildTextArea(
             controller: _setupNotesController,
@@ -255,7 +251,7 @@ class _SessionEditScreenState extends ConsumerState<SessionEditScreen> {
           const SizedBox(height: 24),
 
           // Session notes
-          _buildSectionLabel('SESSION NOTES'),
+          const SectionHeader(title: 'SESSION NOTES', padding: EdgeInsets.zero),
           const SizedBox(height: 8),
           _buildTextArea(
             controller: _sessionNotesController,
@@ -269,13 +265,6 @@ class _SessionEditScreenState extends ConsumerState<SessionEditScreen> {
           const SizedBox(height: 40),
         ],
       ),
-    );
-  }
-
-  Widget _buildSectionLabel(String label) {
-    return Text(
-      label,
-      style: AppTypography.sectionLabel,
     );
   }
 

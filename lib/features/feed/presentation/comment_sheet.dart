@@ -57,12 +57,25 @@ class _CommentSheetState extends ConsumerState<_CommentSheet> {
       );
 
   Future<void> _loadComments() async {
-    final comments = await _repo.getSessionComments(widget.sessionId);
-    if (mounted) {
-      setState(() {
-        _comments = comments;
-        _loading = false;
-      });
+    try {
+      final comments = await _repo.getSessionComments(widget.sessionId);
+      if (mounted) {
+        setState(() {
+          _comments = comments;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[Comments] Failed to load comments: $e');
+      if (mounted) {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not load comments. Please try again.'),
+            backgroundColor: AppColors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -76,19 +89,33 @@ class _CommentSheetState extends ConsumerState<_CommentSheet> {
     setState(() => _sending = true);
     _controller.clear();
 
-    await _repo.addComment(
-      sessionId: widget.sessionId,
-      userId: user.id,
-      body: body,
-    );
+    try {
+      await _repo.addComment(
+        sessionId: widget.sessionId,
+        userId: user.id,
+        body: body,
+      );
 
-    await _loadComments();
+      await _loadComments();
 
-    // Invalidate feed providers so comment count updates on cards
-    ref.invalidate(followingFeedProvider);
-    ref.invalidate(nearbyFeedProvider);
-
-    if (mounted) setState(() => _sending = false);
+      // Invalidate feed providers so comment count updates on cards
+      ref.invalidate(followingFeedProvider);
+      ref.invalidate(nearbyFeedProvider);
+    } catch (e) {
+      debugPrint('[Comments] Failed to send comment: $e');
+      if (mounted) {
+        // Restore the text so the user doesn't lose their comment
+        _controller.text = body;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not send comment. Please try again.'),
+            backgroundColor: AppColors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
   }
 
   @override

@@ -1,7 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/supabase_provider.dart';
-import '../../feed/data/feed_repository.dart';
 import 'team_repository.dart';
 import 'crew_repository.dart';
 
@@ -82,6 +81,15 @@ final teamCrewsProvider =
   return repo.getCrewsForTeam(teamId, currentUserId: user?.id);
 });
 
+// ── Crew Detail ──
+
+final crewDetailProvider =
+    FutureProvider.family<CrewInfo?, String>((ref, crewId) async {
+  final user = ref.watch(currentUserProvider);
+  final repo = ref.watch(crewRepositoryProvider);
+  return repo.getCrew(crewId, currentUserId: user?.id);
+});
+
 // ── Crew Members ──
 
 final crewMembersProvider =
@@ -90,12 +98,3 @@ final crewMembersProvider =
   return repo.getCrewMembers(crewId);
 });
 
-// ── Teams Feed ──
-
-final teamsFeedProvider = FutureProvider<List<FeedItem>>((ref) async {
-  final user = ref.watch(currentUserProvider);
-  if (user == null) return [];
-  final client = ref.read(supabaseClientProvider);
-  final repo = FeedRepository(client);
-  return repo.getTeamsFeed(userId: user.id);
-});

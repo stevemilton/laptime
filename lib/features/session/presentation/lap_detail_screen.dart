@@ -12,7 +12,7 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/format_utils.dart';
 import '../../../core/widgets/widgets.dart';
-import '../../../features/settings/presentation/settings_screen.dart';
+import '../../../core/providers/preferences_provider.dart';
 import '../../telemetry/data/telemetry_processor.dart';
 import '../../telemetry/presentation/telemetry_chart.dart';
 import '../data/session_repository.dart';
@@ -51,46 +51,59 @@ class _LapDetailScreenState extends ConsumerState<LapDetailScreen> {
   }
 
   Future<void> _loadData() async {
-    final repo = ref.read(sessionRepositoryProvider);
+    try {
+      final repo = ref.read(sessionRepositoryProvider);
 
-    final lap = await repo.getLap(widget.lapId);
-    final session = await repo.getSession(widget.sessionId);
+      final lap = await repo.getLap(widget.lapId);
+      final session = await repo.getSession(widget.sessionId);
 
-    LocalCircuit? circuit;
-    if (session?.circuitId != null) {
-      circuit = await repo.getCircuit(session!.circuitId!);
+      LocalCircuit? circuit;
+      if (session?.circuitId != null) {
+        circuit = await repo.getCircuit(session!.circuitId!);
+      }
+
+      final allLaps = await repo.getSessionLaps(widget.sessionId);
+
+      // Load sensor data for telemetry charts
+      ProcessedTelemetry? telemetry;
+      final sensorData = await repo.getLapSensorData(widget.lapId);
+      if (sensorData != null) {
+        final snapshot = LapSensorSnapshot(
+          timestamps: _decodeJsonDoubleList(sensorData.timestampsJson),
+          accelX: _decodeJsonDoubleList(sensorData.accelXJson),
+          accelY: _decodeJsonDoubleList(sensorData.accelYJson),
+          accelZ: _decodeJsonDoubleList(sensorData.accelZJson),
+          gyroX: _decodeJsonDoubleList(sensorData.gyroXJson),
+          gyroY: _decodeJsonDoubleList(sensorData.gyroYJson),
+          gyroZ: _decodeJsonDoubleList(sensorData.gyroZJson),
+          magHeading: _decodeJsonDoubleList(sensorData.magHeadingJson),
+          baroPressure: _decodeJsonDoubleList(sensorData.baroPressureJson),
+        );
+        telemetry = TelemetryProcessor.processSensorData(snapshot);
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _lap = lap;
+        _session = session;
+        _circuit = circuit;
+        _allLaps = allLaps;
+        _telemetry = telemetry;
+        _isLoading = false;
+      });
+    } catch (e) {
+      debugPrint('[LapDetail] Failed to load lap data: $e');
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not load lap details. Please try again.'),
+            backgroundColor: AppColors.red,
+          ),
+        );
+      }
     }
-
-    final allLaps = await repo.getSessionLaps(widget.sessionId);
-
-    // Load sensor data for telemetry charts
-    ProcessedTelemetry? telemetry;
-    final sensorData = await repo.getLapSensorData(widget.lapId);
-    if (sensorData != null) {
-      final snapshot = LapSensorSnapshot(
-        timestamps: _decodeJsonDoubleList(sensorData.timestampsJson),
-        accelX: _decodeJsonDoubleList(sensorData.accelXJson),
-        accelY: _decodeJsonDoubleList(sensorData.accelYJson),
-        accelZ: _decodeJsonDoubleList(sensorData.accelZJson),
-        gyroX: _decodeJsonDoubleList(sensorData.gyroXJson),
-        gyroY: _decodeJsonDoubleList(sensorData.gyroYJson),
-        gyroZ: _decodeJsonDoubleList(sensorData.gyroZJson),
-        magHeading: _decodeJsonDoubleList(sensorData.magHeadingJson),
-        baroPressure: _decodeJsonDoubleList(sensorData.baroPressureJson),
-      );
-      telemetry = TelemetryProcessor.processSensorData(snapshot);
-    }
-
-    if (!mounted) return;
-
-    setState(() {
-      _lap = lap;
-      _session = session;
-      _circuit = circuit;
-      _allLaps = allLaps;
-      _telemetry = telemetry;
-      _isLoading = false;
-    });
   }
 
   int? get _bestLapMs {
@@ -291,7 +304,8 @@ class _LapDetailScreenState extends ConsumerState<LapDetailScreen> {
         pressure: pressure,
         trackCondition: humidity,
       );
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[LapDetail] Failed to parse weather JSON: $e');
       return const SizedBox.shrink();
     }
   }

@@ -7,18 +7,16 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/supabase_provider.dart';
-import '../../profile/data/profile_repository.dart';
+import '../../profile/data/profile_providers.dart';
+import '../../profile/data/ensure_local_profile.dart';
 import '../data/disclaimer_repository.dart';
 
 /// Provider for disclaimer acceptance state.
 final hasAcceptedDisclaimerProvider = FutureProvider<bool>((ref) async {
   final user = ref.watch(currentUserProvider);
   if (user == null) return false;
-  final db = ref.read(databaseProvider);
-  final client = ref.read(supabaseClientProvider);
-  final repo = DisclaimerRepository(db, client);
+  final repo = ref.read(disclaimerRepositoryProvider);
   return repo.hasAcceptedLatest(user.id);
 });
 
@@ -201,19 +199,10 @@ class _DisclaimerScreenState extends ConsumerState<DisclaimerScreen> {
     setState(() => _isSubmitting = true);
 
     try {
-      final db = ref.read(databaseProvider);
-      final client = ref.read(supabaseClientProvider);
-
       // Ensure local profile exists (safety net for existing users)
-      final profileRepo = ProfileRepository(db, client);
-      final meta = user.userMetadata;
-      final name = meta?['full_name'] as String? ??
-          meta?['name'] as String? ??
-          user.email?.split('@').first ??
-          'Driver';
-      await profileRepo.ensureLocalProfile(userId: user.id, displayName: name);
+      await ensureLocalProfile(ref.read(profileRepositoryProvider));
 
-      final repo = DisclaimerRepository(db, client);
+      final repo = ref.read(disclaimerRepositoryProvider);
 
       final packageInfo = await PackageInfo.fromPlatform();
 
@@ -233,7 +222,7 @@ class _DisclaimerScreenState extends ConsumerState<DisclaimerScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: const Text('Something went wrong. Please try again.'),
             backgroundColor: AppColors.red,
           ),
         );

@@ -10,11 +10,12 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
-import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/supabase_provider.dart';
 import '../../../core/providers/sync_provider.dart';
+import '../../../core/utils/image_utils.dart';
+import '../../../core/utils/string_utils.dart';
 import '../../../core/widgets/app_avatar.dart';
-import '../data/profile_repository.dart';
+import '../data/profile_providers.dart';
 
 /// Edit profile screen for updating display name, handle, and avatar.
 class EditProfileScreen extends ConsumerStatefulWidget {
@@ -40,9 +41,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     final user = ref.read(currentUserProvider);
     if (user == null) return;
 
-    final db = ref.read(databaseProvider);
-    final client = ref.read(supabaseClientProvider);
-    final repo = ProfileRepository(db, client);
+    final repo = ref.read(profileRepositoryProvider);
     final profile = await repo.getProfile(user.id);
 
     if (profile != null && mounted) {
@@ -159,15 +158,8 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     );
   }
 
-  /// Check whether a local image file actually exists on disk.
-  bool _imageFileExists(String? url) {
-    if (url == null || url.isEmpty) return false;
-    if (url.startsWith('http')) return true;
-    return File(url).existsSync();
-  }
-
   Widget _buildAvatar() {
-    if (_imageFileExists(_avatarUrl)) {
+    if (imageFileExists(_avatarUrl)) {
       final isLocal = !_avatarUrl!.startsWith('http');
       return Container(
         width: 80,
@@ -186,18 +178,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     }
 
     // Fallback with initials
-    final name = _nameController.text;
-    String? initials;
-    if (name.isNotEmpty) {
-      final parts = name.split(' ');
-      if (parts.length >= 2) {
-        initials = '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-      } else {
-        initials = name[0].toUpperCase();
-      }
-    }
-
-    return AppAvatar.xl(initials: initials);
+    return AppAvatar.xl(initials: getInitials(_nameController.text));
   }
 
   Future<void> _pickAvatar() async {
@@ -251,7 +232,6 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     if (source == null) return;
 
     try {
-      debugPrint('[Avatar] Picking image from $source');
       final picker = ImagePicker();
       final picked = await picker.pickImage(
         source: source,
@@ -260,15 +240,10 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         imageQuality: 90,
       );
 
-      if (picked == null) {
-        debugPrint('[Avatar] Picker returned null (user cancelled or permission denied)');
-        return;
-      }
+      if (picked == null) return;
       if (!mounted) return;
-      debugPrint('[Avatar] Picked: ${picked.path}');
 
       // Crop to square for avatar
-      debugPrint('[Avatar] Opening cropper...');
       final cropped = await ImageCropper().cropImage(
         sourcePath: picked.path,
         aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
@@ -281,12 +256,8 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         ],
       );
 
-      if (cropped == null) {
-        debugPrint('[Avatar] Cropper returned null (user cancelled)');
-        return;
-      }
+      if (cropped == null) return;
       if (!mounted) return;
-      debugPrint('[Avatar] Cropped: ${cropped.path}');
 
       // Copy to app documents directory for persistence
       final appDir = await getApplicationDocumentsDirectory();
@@ -298,15 +269,11 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       final fileName = 'avatar_${DateTime.now().millisecondsSinceEpoch}$ext';
       final savedPath = path.join(avatarsDir.path, fileName);
       await File(cropped.path).copy(savedPath);
-      debugPrint('[Avatar] Saved to: $savedPath (exists: ${File(savedPath).existsSync()})');
 
       if (mounted) {
         setState(() => _avatarUrl = savedPath);
-        debugPrint('[Avatar] State updated with avatarUrl: $savedPath');
       }
-    } catch (e, stack) {
-      debugPrint('[Avatar] ERROR: $e');
-      debugPrint('[Avatar] STACK: $stack');
+    } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -325,9 +292,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final db = ref.read(databaseProvider);
-      final client = ref.read(supabaseClientProvider);
-      final repo = ProfileRepository(db, client);
+      final repo = ref.read(profileRepositoryProvider);
 
       await repo.updateProfile(
         userId: user.id,

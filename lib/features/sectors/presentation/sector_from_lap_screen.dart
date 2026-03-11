@@ -198,14 +198,14 @@ class _SectorFromLapScreenState extends ConsumerState<SectorFromLapScreen> {
       );
 
       // Retroactively score all existing laps
-      await repo.batchComputeSectorTimes(sectorId);
+      await repo.persistSectorTimesForCircuit(sectorId);
 
       if (mounted) context.pop();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: const Text('Could not create sector. Please try again.'),
             backgroundColor: AppColors.red,
           ),
         );
@@ -327,7 +327,7 @@ class _SectorFromLapScreenState extends ConsumerState<SectorFromLapScreen> {
                 .map((s) => DropdownMenuItem(
                       value: s.id,
                       child: Text(
-                        '${_formatDate(s.startedAt)}'
+                        '${FormatUtils.formatShortDate(s.startedAt)}'
                         '${s.circuitName != null ? ' — ${s.circuitName}' : ''}',
                       ),
                     ))
@@ -575,11 +575,4 @@ class _SectorFromLapScreenState extends ConsumerState<SectorFromLapScreen> {
     );
   }
 
-  String _formatDate(DateTime dt) {
-    final months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-    ];
-    return '${dt.day} ${months[dt.month - 1]} ${dt.year}';
-  }
 }

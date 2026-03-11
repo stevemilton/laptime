@@ -9,6 +9,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../database/app_database.dart';
 import 'image_upload_service.dart';
 
+/// Sentinel value for [SyncState.copyWith] to distinguish "not provided" from null.
+const _sentinel = Object();
+
 /// The current state of the sync engine.
 enum SyncStatus { idle, syncing, error }
 
@@ -37,12 +40,12 @@ class SyncState {
   SyncState copyWith({
     SyncStatus? status,
     int? pendingCount,
-    String? lastError,
+    Object? lastError = _sentinel,
   }) {
     return SyncState(
       status: status ?? this.status,
       pendingCount: pendingCount ?? this.pendingCount,
-      lastError: lastError ?? this.lastError,
+      lastError: lastError == _sentinel ? this.lastError : lastError as String?,
     );
   }
 }
