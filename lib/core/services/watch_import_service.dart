@@ -48,35 +48,42 @@ class WatchImportService {
     final endedAt = DateTime.parse(data['endedAt'] as String);
     final laps = (data['laps'] as List?) ?? [];
 
-    // Write session to local DB
-    await _db.into(_db.localSessions).insert(
-      LocalSessionsCompanion.insert(
-        id: sessionId,
-        userId: userId,
-        startedAt: startedAt,
-        endedAt: Value(endedAt),
-      ),
-    );
+    await _db.transaction(() async {
+      final existingSession = await _db.getSession(sessionId);
+      if (existingSession == null) {
+        await _db.into(_db.localSessions).insert(
+          LocalSessionsCompanion.insert(
+            id: sessionId,
+            userId: userId,
+            startedAt: startedAt,
+            endedAt: Value(endedAt),
+          ),
+        );
+      }
 
-    // Enqueue session for sync
-    await _db.enqueueSync(
-      targetTable: 'sessions',
-      operation: 'insert',
-      recordId: sessionId,
-      payloadJson: jsonEncode({
-        'id': sessionId,
-        'user_id': userId,
-        'started_at': startedAt.toIso8601String(),
-        'ended_at': endedAt.toIso8601String(),
-        'is_public': true,
-        'source': 'watch',
-      }),
-    );
+      if (!await _db.hasPendingSyncItem(
+        targetTable: 'sessions',
+        recordId: sessionId,
+      )) {
+        await _db.enqueueSync(
+          targetTable: 'sessions',
+          operation: 'insert',
+          recordId: sessionId,
+          payloadJson: jsonEncode({
+            'id': sessionId,
+            'user_id': userId,
+            'started_at': startedAt.toIso8601String(),
+            'ended_at': endedAt.toIso8601String(),
+            'is_public': true,
+            'source': 'watch',
+          }),
+        );
+      }
 
-    // Import laps
-    for (final lapData in laps) {
-      await _importLap(lapData as Map<String, dynamic>, sessionId);
-    }
+      for (final lapData in laps) {
+        await _importLap(lapData as Map<String, dynamic>, sessionId);
+      }
+    });
 
     return sessionId;
   }
@@ -93,32 +100,35 @@ class WatchImportService {
         .join(',');
     final traceJson = '[$traceCoords]';
 
-    // Write lap to local DB
-    await _db.into(_db.localLaps).insert(
-      LocalLapsCompanion.insert(
-        id: lapId,
-        sessionId: sessionId,
-        lapNumber: lapNumber,
-        durationMs: durationMs,
-        isPersonalBest: const Value(false), // Recalculated on sync
-        traceJson: Value(traceJson),
-      ),
-    );
+    final existingLap = await _db.getLap(lapId);
+    if (existingLap == null) {
+      await _db.into(_db.localLaps).insert(
+        LocalLapsCompanion.insert(
+          id: lapId,
+          sessionId: sessionId,
+          lapNumber: lapNumber,
+          durationMs: durationMs,
+          isPersonalBest: const Value(false),
+          traceJson: Value(traceJson),
+        ),
+      );
+    }
 
-    // Enqueue lap for sync
-    await _db.enqueueSync(
-      targetTable: 'laps',
-      operation: 'insert',
-      recordId: lapId,
-      payloadJson: jsonEncode({
-        'id': lapId,
-        'session_id': sessionId,
-        'lap_number': lapNumber,
-        'duration_ms': durationMs,
-        'is_personal_best': false,
-        'trace_json': traceJson,
-      }),
-    );
+    if (!await _db.hasPendingSyncItem(targetTable: 'laps', recordId: lapId)) {
+      await _db.enqueueSync(
+        targetTable: 'laps',
+        operation: 'insert',
+        recordId: lapId,
+        payloadJson: jsonEncode({
+          'id': lapId,
+          'session_id': sessionId,
+          'lap_number': lapNumber,
+          'duration_ms': durationMs,
+          'is_personal_best': false,
+          'trace_json': traceJson,
+        }),
+      );
+    }
 
     // Import sensor data
     final sensorData = data['sensorData'] as Map<String, dynamic>?;
@@ -136,40 +146,48 @@ class WatchImportService {
 
     if (timestamps.isEmpty) return;
 
-    await _db.into(_db.localLapSensorData).insert(
-      LocalLapSensorDataCompanion.insert(
-        id: sensorId,
-        lapId: lapId,
-        timestampsJson: jsonEncode(timestamps),
-        accelXJson: Value(jsonEncode(data['accelX'] ?? [])),
-        accelYJson: Value(jsonEncode(data['accelY'] ?? [])),
-        accelZJson: Value(jsonEncode(data['accelZ'] ?? [])),
-        gyroXJson: Value(jsonEncode(data['gyroX'] ?? [])),
-        gyroYJson: Value(jsonEncode(data['gyroY'] ?? [])),
-        gyroZJson: Value(jsonEncode(data['gyroZ'] ?? [])),
-        baroPressureJson: Value(jsonEncode(data['baroPressure'] ?? [])),
-        magHeadingJson: Value(jsonEncode(data['magHeading'] ?? [])),
-      ),
-    );
+    final existingSensor = await _db.getLapSensorData(lapId);
+    if (existingSensor == null) {
+      await _db.into(_db.localLapSensorData).insert(
+        LocalLapSensorDataCompanion.insert(
+          id: sensorId,
+          lapId: lapId,
+          timestampsJson: jsonEncode(timestamps),
+          accelXJson: Value(jsonEncode(data['accelX'] ?? [])),
+          accelYJson: Value(jsonEncode(data['accelY'] ?? [])),
+          accelZJson: Value(jsonEncode(data['accelZ'] ?? [])),
+          gyroXJson: Value(jsonEncode(data['gyroX'] ?? [])),
+          gyroYJson: Value(jsonEncode(data['gyroY'] ?? [])),
+          gyroZJson: Value(jsonEncode(data['gyroZ'] ?? [])),
+          baroPressureJson: Value(jsonEncode(data['baroPressure'] ?? [])),
+          magHeadingJson: Value(jsonEncode(data['magHeading'] ?? [])),
+        ),
+      );
+    }
 
-    // Enqueue sensor data for sync
-    await _db.enqueueSync(
+    if (!await _db.hasPendingSyncItem(
       targetTable: 'lap_sensor_data',
-      operation: 'insert',
       recordId: sensorId,
-      payloadJson: jsonEncode({
-        'id': sensorId,
-        'lap_id': lapId,
-        'timestamps_json': timestamps,
-        'accel_x_json': data['accelX'] ?? [],
-        'accel_y_json': data['accelY'] ?? [],
-        'accel_z_json': data['accelZ'] ?? [],
-        'gyro_x_json': data['gyroX'] ?? [],
-        'gyro_y_json': data['gyroY'] ?? [],
-        'gyro_z_json': data['gyroZ'] ?? [],
-        'baro_pressure_json': data['baroPressure'] ?? [],
-        'mag_heading_json': data['magHeading'] ?? [],
-      }),
-    );
+    )) {
+      await _db.enqueueSync(
+        targetTable: 'lap_sensor_data',
+        operation: 'insert',
+        recordId: sensorId,
+        payloadJson: jsonEncode({
+          'id': sensorId,
+          'lap_id': lapId,
+          'timestamps_json': timestamps,
+          'accel_x_json': data['accelX'] ?? [],
+          'accel_y_json': data['accelY'] ?? [],
+          'accel_z_json': data['accelZ'] ?? [],
+          'gyro_x_json': data['gyroX'] ?? [],
+          'gyro_y_json': data['gyroY'] ?? [],
+          'gyro_z_json': data['gyroZ'] ?? [],
+          'baro_pressure_json': data['baroPressure'] ?? [],
+          'mag_heading_json': data['magHeading'] ?? [],
+        }),
+      );
+    }
   }
+
 }

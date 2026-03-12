@@ -20,6 +20,11 @@ final class WatchSessionManager: NSObject, ObservableObject {
 
     override init() {
         super.init()
+        #if targetEnvironment(simulator)
+        // Auto-set a test user ID so the app is usable in the simulator
+        // (WCSession is not supported in watchOS Simulator)
+        userId = "simulator-test-user"
+        #endif
     }
 
     /// Activate the WCSession. Call on app launch.
@@ -106,6 +111,12 @@ extension WatchSessionManager: WCSessionDelegate {
 
     @MainActor
     private func processApplicationContext(_ context: [String: Any]) {
+        if let signedIn = context["signedIn"] as? Bool, signedIn == false {
+            userId = nil
+            startFinishLine = nil
+            return
+        }
+
         // User ID
         if let uid = context["userId"] as? String {
             userId = uid

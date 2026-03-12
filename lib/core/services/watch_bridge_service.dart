@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../providers/database_provider.dart';
+import '../providers/supabase_provider.dart';
 import '../providers/sync_provider.dart';
 import 'watch_import_service.dart';
 
@@ -26,8 +27,7 @@ class WatchBridgeService {
 
     _channel.setMethodCallHandler(_handleMethodCall);
 
-    // Push current user config to Watch on init
-    _pushUserConfig();
+    refreshConfig();
   }
 
   /// Handle incoming calls from native iOS (session file received from Watch).
@@ -64,17 +64,22 @@ class WatchBridgeService {
 
   /// Push current user ID and circuit config to the Watch.
   Future<void> _pushUserConfig({
+    String? userId,
     double? sfLat1,
     double? sfLng1,
     double? sfLat2,
     double? sfLng2,
   }) async {
     try {
-      final user = Supabase.instance.client.auth.currentUser;
-      if (user == null) return;
+      final resolvedUserId =
+          userId ?? Supabase.instance.client.auth.currentUser?.id;
+      if (resolvedUserId == null) {
+        await _channel.invokeMethod('clearConfig');
+        return;
+      }
 
       final args = <String, dynamic>{
-        'userId': user.id,
+        'userId': resolvedUserId,
       };
 
       if (sfLat1 != null && sfLng1 != null && sfLat2 != null && sfLng2 != null) {
@@ -88,6 +93,11 @@ class WatchBridgeService {
     } catch (e) {
       debugPrint('[WatchBridge] Failed to push config: $e');
     }
+  }
+
+  /// Refresh the currently active watch configuration.
+  Future<void> refreshConfig() {
+    return _pushUserConfig();
   }
 
   /// Push start/finish line configuration to the Watch.
@@ -121,5 +131,8 @@ class WatchBridgeService {
 final watchBridgeProvider = Provider<WatchBridgeService>((ref) {
   final service = WatchBridgeService(ref);
   service.initialize();
+  ref.listen(authStateProvider, (previous, next) {
+    service.refreshConfig();
+  });
   return service;
 });

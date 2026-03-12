@@ -16,17 +16,13 @@ class TestTrackApp extends ConsumerStatefulWidget {
   ConsumerState<TestTrackApp> createState() => _TestTrackAppState();
 }
 
-class _TestTrackAppState extends ConsumerState<TestTrackApp> {
-  SyncLifecycleObserver? _syncObserver;
-
+class _TestTrackAppState extends ConsumerState<TestTrackApp>
+    with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    // Register sync lifecycle observer after first frame
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _syncObserver = SyncLifecycleObserver(ref.read(syncServiceProvider));
-      WidgetsBinding.instance.addObserver(_syncObserver!);
-
       // Initialize Apple Watch bridge (listens for incoming session files)
       ref.read(watchBridgeProvider);
 
@@ -37,6 +33,14 @@ class _TestTrackAppState extends ConsumerState<TestTrackApp> {
       // operations silently affect 0 rows.
       _ensureProfileOnStartup();
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      ref.read(syncServiceProvider).onAppResumed();
+      ref.read(watchBridgeProvider).refreshConfig();
+    }
   }
 
   /// If a Supabase session already exists (restored from storage),
@@ -64,9 +68,7 @@ class _TestTrackAppState extends ConsumerState<TestTrackApp> {
 
   @override
   void dispose() {
-    if (_syncObserver != null) {
-      WidgetsBinding.instance.removeObserver(_syncObserver!);
-    }
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 

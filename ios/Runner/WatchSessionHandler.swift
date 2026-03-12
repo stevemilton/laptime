@@ -48,6 +48,19 @@ class WatchSessionHandler: NSObject {
         }
     }
 
+    /// Clear stale auth/circuit state on the Watch.
+    func clearConfigOnWatch() {
+        guard WCSession.default.activationState == .activated else { return }
+
+        do {
+            try WCSession.default.updateApplicationContext([
+                "signedIn": false
+            ])
+        } catch {
+            print("[WatchHandler] Failed to clear context: \(error)")
+        }
+    }
+
     // MARK: - Flutter Call Handler
 
     private func handleFlutterCall(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -72,6 +85,10 @@ class WatchSessionHandler: NSObject {
 
         case "isWatchPaired":
             result(WCSession.isSupported() && WCSession.default.isPaired)
+
+        case "clearConfig":
+            clearConfigOnWatch()
+            result(nil)
 
         default:
             result(FlutterMethodNotImplemented)

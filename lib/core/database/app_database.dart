@@ -109,8 +109,36 @@ class AppDatabase extends _$AppDatabase {
         operation: operation,
         recordId: recordId,
         payloadJson: payloadJson,
-      ),
-    );
+        ),
+      );
+  }
+
+  /// Returns whether a queue item already exists for a given record.
+  Future<bool> hasPendingSyncItem({
+    required String targetTable,
+    required String recordId,
+  }) async {
+    final existing = await (select(localSyncQueue)
+          ..where((t) =>
+              t.targetTable.equals(targetTable) &
+              t.recordId.equals(recordId))
+          ..limit(1))
+        .getSingleOrNull();
+    return existing != null;
+  }
+
+  /// Removes queued sync items for the given records.
+  Future<void> removePendingSyncItems({
+    required String targetTable,
+    required Iterable<String> recordIds,
+  }) async {
+    final ids = recordIds.toSet().toList(growable: false);
+    if (ids.isEmpty) return;
+
+    await (delete(localSyncQueue)
+          ..where((t) =>
+              t.targetTable.equals(targetTable) & t.recordId.isIn(ids)))
+        .go();
   }
 
   Future<List<LocalSyncQueueData>> getPendingSyncItems({
@@ -198,6 +226,16 @@ class AppDatabase extends _$AppDatabase {
           ..where((t) => t.sessionId.equals(sessionId))
           ..orderBy([(t) => OrderingTerm.asc(t.lapNumber)]))
         .get();
+  }
+
+  Future<LocalLap?> getLap(String lapId) {
+    return (select(localLaps)..where((t) => t.id.equals(lapId)))
+        .getSingleOrNull();
+  }
+
+  Future<LocalLapSensorDataData?> getLapSensorData(String lapId) {
+    return (select(localLapSensorData)..where((t) => t.lapId.equals(lapId)))
+        .getSingleOrNull();
   }
 
   // ── Circuit helpers ──
