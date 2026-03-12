@@ -6,6 +6,7 @@ import 'core/router/app_router.dart';
 import 'core/providers/database_provider.dart';
 import 'core/providers/supabase_provider.dart';
 import 'core/providers/sync_provider.dart';
+import 'core/services/watch_bridge_service.dart';
 import 'features/profile/data/profile_repository.dart';
 
 class TestTrackApp extends ConsumerStatefulWidget {
@@ -25,6 +26,9 @@ class _TestTrackAppState extends ConsumerState<TestTrackApp> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _syncObserver = SyncLifecycleObserver(ref.read(syncServiceProvider));
       WidgetsBinding.instance.addObserver(_syncObserver!);
+
+      // Initialize Apple Watch bridge (listens for incoming session files)
+      ref.read(watchBridgeProvider);
 
       // Ensure local profile exists on cold start with restored session.
       // This is critical: when the app restarts, Supabase restores the session
