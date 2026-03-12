@@ -1,7 +1,119 @@
-TestTrack is intended for use at closed motorsport circuits, private land, and sanctioned track day events only.
+TEST TRACK
 
-TestTrack Limited accepts no liability for any loss, injury, damage, prosecution, or legal consequence arising from use of this app on public roads or in any other context contrary to applicable law. Use of this app on a public road is entirely at the user's own risk. Nothing in this app constitutes an endorsement or encouragement of dangerous, careless, or illegal driving.
+DISCLAIMER AND ASSUMPTION OF RISK
 
-Motorsport is an inherently dangerous activity. By using TestTrack you confirm that you are participating in a lawfully organised event, that you hold any licence or permission required by the venue, and that you accept full personal responsibility for your safety and the safety of others.
+READ CAREFULLY BEFORE USING THIS APPLICATION
 
-TestTrack is a timing and data recording tool only. It does not constitute safety equipment and must not be relied upon as such.
+Version date: 11 March 2026
+
+BY TAPPING "I AGREE" OR OTHERWISE ACCESSING OR USING THE TEST TRACK APPLICATION ("THE APP"), YOU CONFIRM THAT YOU HAVE READ, UNDERSTOOD, AND IRREVOCABLY AGREE TO BE BOUND BY THIS DISCLAIMER IN ITS ENTIRETY. IF YOU DO NOT AGREE, YOU MUST NOT USE THE APP.
+
+This Disclaimer is issued by Polar Industries Limited, a company registered in England and Wales ("Polar Industries", "we", "us"). The App is a lap timing and telemetry data recording tool designed solely for use at lawfully organised motorsport events on closed circuits or private land.
+
+
+1. Nature of the App
+
+The App is a software tool that records timing and data. It is not safety equipment, race management infrastructure, or a substitute for any professional marshalling, timing, or safety system. The App does not monitor track conditions, other vehicles, hazards, or any aspect of your physical environment. You must not rely on the App for any purpose relating to your physical safety or the safety of others.
+
+
+2. Inherent Risks of Motorsport
+
+You acknowledge and accept that motorsport is an inherently hazardous activity carrying significant risks, including but not limited to:
+
+- Serious personal injury, permanent disability, or death
+- Damage to or total loss of your vehicle
+- Injury to third parties, including spectators, marshals, and other participants
+- Property damage
+
+These risks exist regardless of the skill of the driver, the condition of the vehicle, or the use of any app or technology. By using the App, you confirm that you voluntarily and knowingly accept all such risks.
+
+
+3. Permitted Use Only
+
+The App is designed exclusively for use at:
+
+- Licensed or permitted closed motor racing circuits
+- Private land events lawfully organised by a recognised motorsport body or venue operator
+- Sanctioned track day, sprint, or competition events where the use of timing technology is permitted
+
+USE OF THE APP ON PUBLIC ROADS OR IN ANY CONTEXT CONTRARY TO APPLICABLE LAW IS STRICTLY PROHIBITED. Any such use is entirely at the user's own risk. Polar Industries Limited expressly disclaims all liability for any consequence arising from use of the App on public roads or in any unlawful context.
+
+
+4. Your Responsibilities
+
+By using the App, you confirm and warrant that:
+
+- You are participating in a lawfully organised motorsport event at an authorised venue
+- You hold all licences, permits, memberships, and permissions required by the event organiser, venue, and any applicable motorsport governing body
+- Your vehicle is roadworthy, compliant with all applicable technical regulations, and properly insured for the event
+- You have obtained any personal accident, liability, or motorsport insurance appropriate for your participation
+- You are not under the influence of alcohol, drugs, medication, or any other substance that may impair your ability to drive safely
+- You are physically and mentally fit to participate in motorsport activity
+- You will comply with all venue rules, event regulations, and the instructions of marshals and officials at all times
+- Your use of the App will not distract you from safe operation of your vehicle
+
+
+5. Full Exclusion of Liability
+
+To the maximum extent permitted by applicable law, Polar Industries Limited, its directors, employees, officers, contractors, agents, affiliates, and licensors (together, "The Polar Parties") shall have no liability whatsoever, whether in contract, tort (including negligence), statute, or otherwise, for:
+
+- Any personal injury, death, or illness sustained by you or any third party in connection with your participation in any motorsport activity while using the App
+- Any damage to or loss of your vehicle, equipment, or other property
+- Any injury or damage suffered by third parties arising from your use of the App or your participation in motorsport activity
+- Any loss or inaccuracy of timing data, telemetry, or other information recorded by the App
+- Any failure, interruption, error, or malfunction of the App howsoever caused
+- Any reliance placed on data, readings, or outputs generated by the App
+- Any indirect, consequential, incidental, or special losses arising from the use of or inability to use the App
+
+Nothing in this Disclaimer excludes liability for death or personal injury caused by the gross negligence or wilful misconduct of Polar Industries Limited, or for fraud or fraudulent misrepresentation, where such exclusion would be unlawful under English law. Subject to the foregoing, the total liability of the Polar Parties to you shall not exceed £10.
+
+
+6. Voluntary Assumption of Risk
+
+By using the App, you confirm that you:
+
+- Freely and voluntarily assume full personal responsibility for all risks, losses, costs, and damages associated with your participation in any motorsport activity, whether or not the App is in use at the time
+- Release and discharge the Polar Parties from any and all claims, demands, actions, and causes of action arising out of or related to your participation in motorsport activity
+- Agree that this release extends to all injuries and losses, whether known or unknown at the time of acceptance
+
+
+7. No Endorsement of Dangerous Conduct
+
+Nothing in the App, including any feature, branding, or data output, constitutes an endorsement, encouragement, or facilitation of dangerous, careless, reckless, or illegal driving or motorsport activity. The App is a neutral data recording tool only.
+
+
+8. Third-Party Venues and Organisers
+
+Polar Industries Limited has no control over the conditions, safety standards, regulations, or management of any venue or event at which you use the App. We accept no responsibility or liability for the acts or omissions of any event organiser, circuit operator, marshal, official, or other participant.
+
+
+9. GPS and Data Accuracy
+
+Timing and positional data generated by the App relies on GPS signals and device sensors, which may be subject to interference, delay, inaccuracy, or failure. You acknowledge that the App's data outputs are indicative only and must not be treated as definitive or relied upon for any purpose beyond personal reference. Polar Industries Limited makes no representation or warranty as to the accuracy, completeness, or reliability of any data produced by the App.
+
+
+10. Minors
+
+This App must not be used by or on behalf of any person under the age of 18 without the prior written consent of a parent or legal guardian, who by granting such consent accepts all obligations and terms under this Disclaimer on behalf of the minor.
+
+
+11. Governing Law
+
+This Disclaimer is governed by and shall be construed in accordance with the laws of England and Wales. Any dispute arising out of or in connection with this Disclaimer shall be subject to the exclusive jurisdiction of the courts of England and Wales.
+
+
+12. Severability
+
+If any provision of this Disclaimer is found to be invalid, unlawful, or unenforceable by a court of competent jurisdiction, that provision shall be severed and the remaining provisions shall continue in full force and effect.
+
+
+13. Entire Agreement
+
+This Disclaimer, together with the Test Track Terms and Conditions and Privacy Policy, constitutes the entire agreement between you and Polar Industries Limited in respect of your use of the App and supersedes all prior representations, discussions, or agreements.
+
+
+ACCEPTANCE
+
+BY TAPPING "I AGREE" BELOW, YOU CONFIRM THAT YOU HAVE READ AND FULLY UNDERSTOOD THIS DISCLAIMER, THAT YOU ARE 18 YEARS OF AGE OR OLDER (OR HAVE VALID PARENTAL CONSENT), THAT YOU ACCEPT ALL TERMS WITHOUT RESERVATION, AND THAT YOU VOLUNTARILY ASSUME ALL RISKS ASSOCIATED WITH PARTICIPATION IN MOTORSPORT ACTIVITY.
+
+Polar Industries Limited — support@polarindustries.co

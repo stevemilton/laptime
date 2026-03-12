@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/theme/app_theme.dart';
@@ -154,13 +155,40 @@ class SettingsScreen extends ConsumerWidget {
           ),
           _SettingsTile(
             icon: LucideIcons.fileText,
-            title: 'Terms of Service',
+            title: 'Terms and Conditions',
             onTap: () => context.push('/terms'),
           ),
           _SettingsTile(
             icon: LucideIcons.alertTriangle,
             title: 'Disclaimer',
             onTap: () => context.push('/legal-disclaimer'),
+          ),
+
+          const Divider(indent: 56),
+
+          // Contact & Social section
+          _SectionTitle(title: 'CONNECT'),
+          _SettingsTile(
+            icon: LucideIcons.mail,
+            title: 'Contact Us',
+            onTap: () => launchUrl(
+              Uri.parse('mailto:support@polarindustries.co'),
+            ),
+          ),
+          _SettingsTile(
+            icon: LucideIcons.x,
+            title: 'X',
+            subtitle: 'Coming soon',
+          ),
+          _SettingsTile(
+            icon: LucideIcons.instagram,
+            title: 'Instagram',
+            subtitle: 'Coming soon',
+          ),
+          _SettingsTile(
+            icon: LucideIcons.music,
+            title: 'TikTok',
+            subtitle: 'Coming soon',
           ),
 
           const Divider(indent: 56),

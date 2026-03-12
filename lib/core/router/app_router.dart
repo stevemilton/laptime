@@ -203,6 +203,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const SettingsScreen(),
       ),
 
+
       // Legal screens (full-screen)
       GoRoute(
         path: '/privacy-policy',
@@ -216,7 +217,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/terms',
         name: RouteNames.terms,
         builder: (context, state) => const LegalScreen(
-          title: 'Terms of Service',
+          title: 'Terms and Conditions',
           assetPath: 'assets/legal/terms.md',
         ),
       ),

@@ -98,7 +98,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
             indicatorColor: AppColors.purple,
             indicatorSize: TabBarIndicatorSize.label,
             tabs: const [
-              Tab(text: 'Mine'),
+              Tab(text: 'My Laps'),
               Tab(text: 'Following'),
               Tab(text: 'Nearby'),
               Tab(text: 'Teams'),

@@ -80,6 +80,68 @@ class _RecordScreenState extends ConsumerState<RecordScreen>
     _fetchWeather();
   }
 
+  void _showGpsInfo(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadii.xl)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('GPS Signal Quality',
+                    style: AppTypography.headlineSmall),
+                const SizedBox(height: 12),
+                Text(
+                  'This shows how accurate your phone\'s GPS signal is right now. '
+                  'A lower number means more precise lap timing and track traces.',
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: AppColors.textSecondary,
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _GpsInfoRow(
+                  color: AppColors.green,
+                  label: 'Excellent',
+                  description: 'Under 5m — ideal for recording',
+                ),
+                const SizedBox(height: 8),
+                _GpsInfoRow(
+                  color: AppColors.gold,
+                  label: 'Good',
+                  description: '5–10m — fine for most sessions',
+                ),
+                const SizedBox(height: 8),
+                _GpsInfoRow(
+                  color: AppColors.red,
+                  label: 'Poor',
+                  description: 'Over 10m — data may be less accurate',
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Tip: GPS accuracy improves outdoors with a clear view of the sky. '
+                  'Give it a moment to lock on before starting your session.',
+                  style: AppTypography.bodySmall.copyWith(
+                    color: AppColors.textTertiary,
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _checkGps() async {
     final ready = await _locationService.checkPermissions();
     if (mounted) setState(() => _gpsReady = ready);
@@ -176,9 +238,12 @@ class _RecordScreenState extends ConsumerState<RecordScreen>
                       style: AppTypography.headlineLarge,
                     ),
                     const SizedBox(height: 2),
-                    GpsIndicator(
-                      isActive: _gpsReady,
-                      accuracy: _gpsAccuracy,
+                    GestureDetector(
+                      onTap: () => _showGpsInfo(context),
+                      child: GpsIndicator(
+                        isActive: _gpsReady,
+                        accuracy: _gpsAccuracy,
+                      ),
                     ),
                   ],
                 ),
@@ -446,5 +511,49 @@ class _RecordScreenState extends ConsumerState<RecordScreen>
       // Navigate to active recording screen
       context.push('/recording');
     }
+  }
+}
+
+class _GpsInfoRow extends StatelessWidget {
+  const _GpsInfoRow({
+    required this.color,
+    required this.label,
+    required this.description,
+  });
+
+  final Color color;
+  final String label;
+  final String description;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: color,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          label,
+          style: AppTypography.bodyMedium.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            description,
+            style: AppTypography.bodySmall.copyWith(
+              color: AppColors.textTertiary,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
