@@ -421,11 +421,13 @@ class TeamRepository {
 
   // ── Update ──
 
+  /// Update team details. [logoUrl] uses drift's [Value] tristate:
+  /// `Value.absent()` leaves the logo untouched, `Value(null)` removes it.
   Future<void> updateTeam({
     required String teamId,
     String? name,
     String? location,
-    String? logoUrl,
+    Value<String?> logoUrl = const Value.absent(),
   }) async {
     if (name != null && (name.length < 2 || name.length > 100)) {
       throw ArgumentError('Team name must be 2-100 characters');
@@ -437,7 +439,7 @@ class TeamRepository {
     final companion = LocalTeamsCompanion(
       name: name != null ? Value(name) : const Value.absent(),
       location: location != null ? Value(location) : const Value.absent(),
-      logoUrl: logoUrl != null ? Value(logoUrl) : const Value.absent(),
+      logoUrl: logoUrl,
     );
 
     await (_db.update(_db.localTeams)..where((t) => t.id.equals(teamId)))
@@ -448,6 +450,8 @@ class TeamRepository {
         .getSingleOrNull();
     if (team == null) return;
 
+    // Full row, nullable fields included: omitting a cleared logo_url
+    // would leave the old image live on the server forever.
     await _db.enqueueSync(
       targetTable: 'teams',
       operation: 'update',
@@ -457,8 +461,8 @@ class TeamRepository {
         'name': team.name,
         'code': team.code,
         'created_by': team.createdBy,
-        if (team.location != null) 'location': team.location,
-        if (team.logoUrl != null) 'logo_url': team.logoUrl,
+        'location': team.location,
+        'logo_url': team.logoUrl,
         'verified': team.verified,
       }),
     );

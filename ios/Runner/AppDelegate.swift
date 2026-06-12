@@ -15,9 +15,11 @@ import UIKit
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
 
-    // Get the binary messenger from the root Flutter view controller
-    if let controller = window?.rootViewController as? FlutterViewController {
-      watchHandler.setup(with: controller.binaryMessenger)
-    }
+    // Use the engine bridge's messenger directly: at this point in the
+    // scene lifecycle the FlutterViewController may not yet be installed
+    // as the window's rootViewController, and a nil lookup here would
+    // silently disable the entire watch bridge (WCSession never activates,
+    // every Dart call on the channel throws MissingPluginException).
+    watchHandler.setup(with: engineBridge.applicationBinaryMessenger)
   }
 }
