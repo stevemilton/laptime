@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -17,12 +19,28 @@ import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/lap_time_text.dart';
 import '../../../core/widgets/p1_badge.dart';
 import '../../../core/widgets/section_header.dart';
+import '../../recording/data/circuit_repository.dart';
 import '../data/sector_repository.dart';
 
 // ── Providers ──
 
-final _allCircuitsProvider = FutureProvider<List<LocalCircuit>>((ref) {
+final _allCircuitsProvider = FutureProvider<List<LocalCircuit>>((ref) async {
   final db = ref.watch(databaseProvider);
+  final repo = ref.read(circuitRepositoryProvider);
+
+  // Offline-first: serve the cache immediately when it has anything and
+  // refresh the shared catalogue in the background (a flaky connection
+  // must not turn this tab into a spinner). Only block on the network
+  // when the cache is empty. The refresh is TTL-gated, so invalidating
+  // after a real pull cannot loop.
+  final cached = await db.getAllCircuits();
+  if (cached.isNotEmpty) {
+    unawaited(repo.refreshFromRemote().then((pulled) {
+      if (pulled) ref.invalidateSelf();
+    }));
+    return cached;
+  }
+  await repo.refreshFromRemote();
   return db.getAllCircuits();
 });
 
@@ -30,6 +48,8 @@ final _circuitSectorsProvider =
     StreamProvider.family<List<LocalSector>, String>((ref, circuitId) {
   final db = ref.watch(databaseProvider);
   final repo = SectorRepository(db);
+  // Fire-and-forget remote refresh; the local watch picks up new rows.
+  repo.refreshCircuitSectors(circuitId);
   return repo.watchCircuitSectors(circuitId);
 });
 
@@ -175,14 +195,16 @@ class _SectorsScreenState extends ConsumerState<SectorsScreen> {
           );
         }
 
-        // Default to first circuit if none selected
-        if (_selectedCircuitId == null ||
-            !circuits.any((c) => c.id == _selectedCircuitId)) {
-          _selectedCircuitId = circuits.first.id;
-        }
+        // Default to first circuit if none selected (local fallback only;
+        // not stored via setState because this runs during build).
+        final selectedCircuitId = (_selectedCircuitId != null &&
+                circuits.any((c) => c.id == _selectedCircuitId))
+            ? _selectedCircuitId!
+            : circuits.first.id;
+        _selectedCircuitId = selectedCircuitId;
 
         final selectedCircuit =
-            circuits.firstWhere((c) => c.id == _selectedCircuitId);
+            circuits.firstWhere((c) => c.id == selectedCircuitId);
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -557,9 +579,11 @@ class _SectorsScreenState extends ConsumerState<SectorsScreen> {
     if (confirmed != true) return;
 
     try {
+      final user = ref.read(currentUserProvider);
+      if (user == null) return;
       final db = ref.read(databaseProvider);
       final repo = SectorRepository(db);
-      await repo.deleteSector(sector.id);
+      await repo.deleteSector(sector.id, requestedBy: user.id);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

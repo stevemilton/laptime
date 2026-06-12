@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import '../../../core/providers/preferences_provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/theme/app_theme.dart';
@@ -112,7 +113,42 @@ class _RecordingView extends ConsumerWidget {
                 ),
               ),
 
-              const SizedBox(height: 32),
+              const SizedBox(height: 20),
+
+              // Live GPS speed
+              Builder(builder: (context) {
+                final units = ref.watch(unitsProvider);
+                final speedMps = state?.speedMps;
+                final value = speedMps != null
+                    ? FormatUtils.speedValue(speedMps, units: units)
+                        .round()
+                        .toString()
+                    : '--';
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Text(
+                      value,
+                      style: AppTypography.displayLarge.copyWith(
+                        color: AppColors.purple,
+                        fontSize: 44,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      FormatUtils.speedUnit(units),
+                      style: AppTypography.bodyMedium.copyWith(
+                        color: AppColors.textTertiary,
+                      ),
+                    ),
+                  ],
+                );
+              }),
+
+              const SizedBox(height: 24),
 
               // Current lap time
               if (lapCount > 0 || currentLap > 0) ...[

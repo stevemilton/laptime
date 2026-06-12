@@ -15,8 +15,9 @@ class FollowRepository {
     required String followerId,
     required String followingId,
   }) async {
-    // Write to local DB
-    await _db.into(_db.localFollows).insert(
+    // Write to local DB. insertOnConflictUpdate keeps a double-tap from
+    // failing on the composite primary key.
+    await _db.into(_db.localFollows).insertOnConflictUpdate(
       LocalFollowsCompanion.insert(
         followerId: followerId,
         followingId: followingId,
@@ -88,13 +89,15 @@ class FollowRepository {
 
   /// Search for users by name or handle (via Supabase).
   Future<List<UserSearchResult>> searchUsers(String query) async {
-    if (query.isEmpty) return [];
+    // Strip characters that break the PostgREST `.or()` filter grammar.
+    final sanitized = _sanitizeSearchQuery(query);
+    if (sanitized.isEmpty) return [];
 
     try {
       final response = await _client
           .from('profiles')
           .select()
-          .or('display_name.ilike.%$query%,handle.ilike.%$query%')
+          .or('display_name.ilike.%$sanitized%,handle.ilike.%$sanitized%')
           .limit(20);
 
       return (response as List)
@@ -104,6 +107,13 @@ class FollowRepository {
       return [];
     }
   }
+}
+
+/// Strip characters that break the PostgREST `.or()` filter grammar
+/// (`,` separates filters, `(`/`)` group, `.` separates operator parts,
+/// `%` is the ilike wildcard).
+String _sanitizeSearchQuery(String query) {
+  return query.replaceAll(RegExp(r'[,().%\\]'), ' ').trim();
 }
 
 /// Search result for a user.

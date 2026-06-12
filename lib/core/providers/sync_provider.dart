@@ -1,7 +1,9 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/image_upload_service.dart';
+import '../services/reconciliation_service.dart';
 import '../services/sync_service.dart';
 import 'connectivity_provider.dart';
 import 'database_provider.dart';
@@ -62,6 +64,55 @@ final pendingSyncCountProvider = Provider<int>((ref) {
     loading: () => 0,
     error: (_, _) => 0,
   );
+});
+
+/// Number of sync items that exhausted their retries (need manual retry).
+final deadLetterCountProvider = Provider<int>((ref) {
+  final state = ref.watch(syncStateProvider);
+  return state.when(
+    data: (s) => s.deadLetterCount,
+    loading: () => 0,
+    error: (_, _) => 0,
+  );
+});
+
+/// Rebuilds the sync queue from local rows (see [ReconciliationService]).
+final reconciliationServiceProvider = Provider<ReconciliationService>((ref) {
+  return ReconciliationService(
+    database: ref.watch(databaseProvider),
+    syncService: ref.watch(syncServiceProvider),
+  );
+});
+
+const _kResyncVersionKey = 'resync_version';
+
+/// Bump this whenever a release fixes sync payloads in a way that requires
+/// historical local data to be re-uploaded (mirrors Drift's schemaVersion /
+/// onUpgrade pattern). v2 fixed the payload<->schema drift (D1-D7).
+const _kCurrentResyncVersion = 2;
+
+/// Gate that re-uploads all local data after a payload-fixing update.
+///
+/// Pre-v2 builds dead-lettered most synced data because the payloads didn't
+/// match the remote schema; the local rows are intact, so a reconciliation
+/// pass recovers everything. Watched from the app root; runs once per
+/// version bump as soon as a user is signed in.
+final resyncGateProvider = Provider<void>((ref) {
+  Future<void> runIfOutdated(String userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    if ((prefs.getInt(_kResyncVersionKey) ?? 0) >= _kCurrentResyncVersion) {
+      return;
+    }
+    await ref.read(reconciliationServiceProvider).resyncAll(userId);
+    await prefs.setInt(_kResyncVersionKey, _kCurrentResyncVersion);
+  }
+
+  ref.listen(currentUserProvider, (previous, user) {
+    if (user != null) runIfOutdated(user.id);
+  });
+
+  final user = ref.read(currentUserProvider);
+  if (user != null) runIfOutdated(user.id);
 });
 
 /// Observer that hooks into [AppLifecycleState] changes and triggers the

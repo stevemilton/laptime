@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:drift/drift.dart';
 import '../../../core/database/app_database.dart';
+import '../../../core/services/sync_payloads.dart';
 
 /// Repository for user profile operations.
 ///
@@ -24,34 +25,41 @@ class ProfileRepository {
 
   /// Update display name, handle, and avatar.
   ///
+  /// Fields use Drift's [Value] wrapper so callers can distinguish
+  /// "leave unchanged" ([Value.absent]) from "clear" (`Value(null)`),
+  /// which makes "Remove Photo" actually work.
+  ///
   /// Uses upsert: if the profile row doesn't exist yet it will be created,
-  /// preventing silent UPDATE-on-zero-rows failures.
+  /// preventing silent UPDATE-on-zero-rows failures. After the local write
+  /// the FULL row is enqueued - the sync engine executes updates as
+  /// upserts, so partial payloads are unsafe.
   Future<void> updateProfile({
     required String userId,
-    String? displayName,
-    String? handle,
-    String? avatarUrl,
+    Value<String> displayName = const Value.absent(),
+    Value<String?> handle = const Value.absent(),
+    Value<String?> avatarUrl = const Value.absent(),
   }) async {
+    final existing = await getProfile(userId);
+
     await _db.into(_db.localProfiles).insertOnConflictUpdate(
       LocalProfilesCompanion.insert(
         id: userId,
-        displayName: Value(displayName ?? 'Driver'),
-        handle: Value(handle),
-        avatarUrl: Value(avatarUrl),
+        displayName: Value(displayName.present
+            ? displayName.value
+            : existing?.displayName ?? 'Driver'),
+        handle: handle.present ? handle : Value(existing?.handle),
+        avatarUrl: avatarUrl.present ? avatarUrl : Value(existing?.avatarUrl),
       ),
     );
 
-    // Enqueue sync
-    final payload = <String, dynamic>{'id': userId};
-    if (displayName != null) payload['display_name'] = displayName;
-    if (handle != null) payload['handle'] = handle;
-    if (avatarUrl != null) payload['avatar_url'] = avatarUrl;
-
+    // Enqueue the full row, read back from Drift.
+    final row = await getProfile(userId);
+    if (row == null) return;
     await _db.enqueueSync(
       targetTable: 'profiles',
       operation: 'update',
       recordId: userId,
-      payloadJson: jsonEncode(payload),
+      payloadJson: jsonEncode(SyncPayloads.profile(row)),
     );
   }
 

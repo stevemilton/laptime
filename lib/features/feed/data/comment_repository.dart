@@ -71,7 +71,36 @@ class CommentRepository {
   }
 
   /// Delete a comment. Removes locally + enqueues sync.
-  Future<void> deleteComment(String commentId) async {
+  ///
+  /// Only the comment's author may delete it; RLS enforces the same rule
+  /// server-side.
+  Future<void> deleteComment({
+    required String commentId,
+    required String userId,
+  }) async {
+    // Resolve the comment's owner: local cache first, then remote.
+    final local = await (_db.select(_db.localSessionComments)
+          ..where((t) => t.id.equals(commentId)))
+        .getSingleOrNull();
+
+    String? ownerId = local?.userId;
+    if (ownerId == null) {
+      try {
+        final row = await _client
+            .from('session_comments')
+            .select('user_id')
+            .eq('id', commentId)
+            .maybeSingle();
+        ownerId = row?['user_id'] as String?;
+      } catch (_) {
+        // Offline — RLS still blocks deleting another user's comment remotely.
+      }
+    }
+
+    if (ownerId != null && ownerId != userId) {
+      throw Exception('You can only delete your own comments');
+    }
+
     await (_db.delete(_db.localSessionComments)
           ..where((t) => t.id.equals(commentId)))
         .go();

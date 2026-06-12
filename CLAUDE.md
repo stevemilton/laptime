@@ -5,7 +5,7 @@ LapTime is a production Flutter iOS app - "Strava for track days." It records GP
 
 ## Tech Stack
 - **Framework**: Flutter (iOS 16+), Dart 3.x
-- **State**: Riverpod (code-gen) via `flutter_riverpod`
+- **State**: Riverpod 2.x (manual providers, no code-gen) via `flutter_riverpod`
 - **Routing**: GoRouter with ShellRoute (4 bottom tabs: Record, Feed, Sectors, Profile)
 - **Backend**: Supabase (PostgreSQL + PostGIS), project ID `clptbdjqnnvwmxgusmma`
 - **Local DB**: Drift (SQLite), offline-first with sync queue
@@ -37,10 +37,11 @@ lib/
 ```
 
 ## Architecture Principles
-1. **Offline-first**: All data written to Drift (SQLite) first, synced to Supabase via FIFO queue
-2. **Never block recording**: Weather is fire-and-forget, sync is async, GPS/sensors run on isolates
-3. **Pure geometry lap detection**: 2D line-segment intersection with tolerance, no cloud dependency
-4. **Retroactive sector scoring**: New sectors automatically score all historical laps
+1. **Offline-first writes**: All mutations written to Drift (SQLite) first, synced to Supabase via a strictly FIFO queue (parent rows enqueued before children). Sync payloads are built by `SyncPayloads` (lib/core/services/sync_payloads.dart) — every key must match a remote column; inserts/updates execute as upserts, so payloads must be full rows. Multi-user reads (feed, leaderboards, team members, circuits) are remote-first with the local DB as cache.
+2. **Never block recording**: Weather is fire-and-forget, sync is async, lap state transitions are synchronous with persistence deferred.
+3. **Pure geometry lap detection**: 2D line-segment intersection with tolerance, no cloud dependency. Armed from the selected circuit's start/finish line.
+4. **Retroactive sector scoring**: Sector creation scores all historical laps; finishing a session scores its laps against all of the circuit's sectors.
+5. **Trace format v2**: lap traces are JSON arrays of `[lng, lat, tMs, speedMps]` (see `TraceCodec` in lib/core/utils/trace_codec.dart). GPS Doppler speed is the only speed source — never integrate accelerometer data. Use `userAccelerometerEventStream` (gravity-removed) for G channels.
 
 ## Design System
 - Primary purple: `#5B3491`, Deep: `#1E0F35`, Bright: `#7B4DB8`

@@ -10,6 +10,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_shadows.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/supabase_provider.dart';
+import '../../../core/providers/sync_provider.dart';
 import '../../../core/utils/image_utils.dart';
 import '../../../core/utils/string_utils.dart';
 import '../../../core/widgets/app_avatar.dart';
@@ -123,9 +124,7 @@ class ProfileScreen extends ConsumerWidget {
                   icon: LucideIcons.logOut,
                   foregroundColor: AppColors.red,
                   borderColor: AppColors.red.withValues(alpha: 0.3),
-                  onTap: () {
-                    ref.read(authControllerProvider.notifier).signOut();
-                  },
+                  onTap: () => _confirmSignOut(context, ref),
                 ),
               ],
             ),
@@ -309,6 +308,43 @@ class ProfileScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  /// Confirm sign-out. Signing out wipes all local data, so warn loudly
+  /// when there are still items waiting to sync (they would be lost) —
+  /// including dead-lettered items, which are unsynced too.
+  Future<void> _confirmSignOut(BuildContext context, WidgetRef ref) async {
+    final unsyncedCount = ref.read(pendingSyncCountProvider) +
+        ref.read(deadLetterCountProvider);
+    final message = unsyncedCount > 0
+        ? 'You have $unsyncedCount item${unsyncedCount == 1 ? '' : 's'} that '
+            'haven\'t synced. Signing out removes all local data from this '
+            'device, so this unsynced data will be lost. Sign out anyway?'
+        : 'Signing out removes all local data from this device. Synced data '
+            'stays safely in your account.';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Sign Out'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.red),
+            child: const Text('Sign Out'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await ref.read(authControllerProvider.notifier).signOut();
+    }
   }
 
   Widget _buildTeamsSection(BuildContext context, WidgetRef ref) {

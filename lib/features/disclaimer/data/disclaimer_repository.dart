@@ -1,10 +1,10 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/providers/database_provider.dart';
-import '../../../core/providers/supabase_provider.dart';
 
 /// Current disclaimer version. Bump this when the disclaimer text changes
 /// to require re-acceptance.
@@ -12,12 +12,11 @@ const kDisclaimerVersion = '1.0';
 
 /// Repository for tracking disclaimer acceptance.
 ///
-/// Records acceptance locally (Drift) and remotely (Supabase).
+/// Records acceptance locally (Drift); the sync queue owns the remote write.
 class DisclaimerRepository {
-  DisclaimerRepository(this._db, this._client);
+  DisclaimerRepository(this._db);
 
   final AppDatabase _db;
-  final SupabaseClient _client;
 
   /// Check if the current user has accepted the latest disclaimer.
   Future<bool> hasAcceptedLatest(String userId) async {
@@ -45,38 +44,24 @@ class DisclaimerRepository {
       ),
     );
 
-    // Enqueue for sync
+    // Enqueue for sync (the queue is the only path to Supabase)
     await _db.enqueueSync(
       targetTable: 'disclaimer_acceptances',
       operation: 'insert',
       recordId: id,
-      payloadJson: '{'
-          '"id":"$id",'
-          '"user_id":"$userId",'
-          '"accepted_at":"${now.toIso8601String()}",'
-          '"app_version":"$appVersion",'
-          '"disclaimer_version":"$kDisclaimerVersion"'
-          '}',
-    );
-
-    // Also try to write directly to Supabase (best-effort)
-    try {
-      await _client.from('disclaimer_acceptances').insert({
+      payloadJson: jsonEncode({
         'id': id,
         'user_id': userId,
         'accepted_at': now.toIso8601String(),
         'app_version': appVersion,
         'disclaimer_version': kDisclaimerVersion,
-      });
-    } catch (_) {
-      // Sync queue will handle this later
-    }
+      }),
+    );
   }
 }
 
 /// Riverpod provider for DisclaimerRepository.
 final disclaimerRepositoryProvider = Provider<DisclaimerRepository>((ref) {
   final db = ref.watch(databaseProvider);
-  final client = ref.watch(supabaseClientProvider);
-  return DisclaimerRepository(db, client);
+  return DisclaimerRepository(db);
 });

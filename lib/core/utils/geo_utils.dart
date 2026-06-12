@@ -93,13 +93,5 @@ abstract final class GeoUtils {
     return points.map((p) => [p.longitude, p.latitude]).toList();
   }
 
-  /// Convert a list of GpsPoints to a JSON-encodable trace string.
-  static String encodeTrace(List<GpsPoint> points) {
-    final coords = points
-        .map((p) => '[${p.longitude},${p.latitude}]')
-        .join(',');
-    return '[$coords]';
-  }
-
   static double _toRadians(double degrees) => degrees * pi / 180;
 }

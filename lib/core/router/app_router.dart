@@ -8,7 +8,6 @@ import '../../features/feed/presentation/feed_screen.dart';
 import '../../features/sectors/presentation/sectors_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../../features/auth/presentation/login_screen.dart';
-import '../../features/auth/presentation/auth_controller.dart';
 import '../../features/disclaimer/presentation/disclaimer_screen.dart';
 import '../../features/recording/presentation/recording_screen.dart';
 import '../../features/session/presentation/session_detail_screen.dart';
@@ -30,21 +29,66 @@ import '../../features/social/presentation/team_join_requests_screen.dart';
 import '../../features/social/presentation/create_team_screen.dart';
 import '../../features/social/presentation/crew_detail_screen.dart';
 import '../../features/telemetry/presentation/lap_comparison_screen.dart';
+import '../providers/supabase_provider.dart';
 import '../theme/app_colors.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 final _shellNavigatorKey = GlobalKey<NavigatorState>();
 
-/// GoRouter provider that watches auth + disclaimer state
-/// and redirects accordingly.
+/// Tells GoRouter to re-run its redirect logic. The router itself is
+/// built exactly once; only redirects re-evaluate on state changes.
+class _RouterRefreshNotifier extends ChangeNotifier {
+  void notify() => notifyListeners();
+}
+
+/// GoRouter provider.
+///
+/// The router is created exactly once and never rebuilt (rebuilding it
+/// resets the navigation stack, which can yank a user out of a live
+/// recording). Auth and disclaimer state are *read* inside `redirect`
+/// and changes are surfaced via [GoRouter.refreshListenable] instead.
 final appRouterProvider = Provider<GoRouter>((ref) {
-  final isAuthenticated = ref.watch(isAuthenticatedProvider);
-  final disclaimerAsync = ref.watch(hasAcceptedDisclaimerProvider);
+  final refresh = _RouterRefreshNotifier();
+  ref.onDispose(refresh.dispose);
+
+  // Re-run redirects when the signed-in user actually changes (compare
+  // user ids so hourly tokenRefreshed events are ignored) or when the
+  // initial session restore completes.
+  ref.listen(authStateProvider, (previous, next) {
+    final previousId = previous?.valueOrNull?.session?.user.id;
+    final nextId = next.valueOrNull?.session?.user.id;
+    final wasLoading = previous?.isLoading ?? true;
+    if (previousId != nextId || wasLoading != next.isLoading) {
+      refresh.notify();
+    }
+  });
+
+  // Re-run redirects when disclaimer acceptance resolves or changes.
+  // Errors resolve to "not accepted" (the legal gate must fail safe), so
+  // they must notify too — comparing valueOrNull alone would miss them.
+  bool? resolveAcceptance(AsyncValue<bool>? value) {
+    if (value == null || value.isLoading) return null;
+    return value.valueOrNull ?? false;
+  }
+
+  ref.listen(hasAcceptedDisclaimerProvider, (previous, next) {
+    if (resolveAcceptance(previous) != resolveAcceptance(next)) {
+      refresh.notify();
+    }
+  });
 
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
     initialLocation: '/record',
+    refreshListenable: refresh,
     redirect: (context, state) {
+      final authState = ref.read(authStateProvider);
+
+      // While the session is still being restored, don't redirect -
+      // this avoids flashing login/disclaimer and resetting navigation.
+      if (authState.isLoading) return null;
+
+      final isAuthenticated = authState.valueOrNull?.session != null;
       final path = state.uri.path;
       final onLogin = path == '/login';
       final onDisclaimer = path == '/disclaimer';
@@ -54,17 +98,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         return onLogin ? null : '/login';
       }
 
+      // Disclaimer state still loading: no redirect (avoids flashing the
+      // disclaimer screen during startup). An ERROR must not bypass the
+      // legal gate — treat it as not accepted; re-accepting rewrites the
+      // local record.
+      final disclaimerState = ref.read(hasAcceptedDisclaimerProvider);
+      if (disclaimerState.isLoading) return null;
+      final hasAccepted = disclaimerState.valueOrNull ?? false;
+
       // Authenticated but on login -> redirect away
       if (onLogin) {
-        return '/disclaimer';
+        return hasAccepted ? '/record' : '/disclaimer';
       }
-
-      // Check disclaimer acceptance
-      final hasAccepted = disclaimerAsync.when(
-        data: (accepted) => accepted,
-        loading: () => false,
-        error: (_, _) => false,
-      );
 
       // Need disclaimer acceptance
       if (!hasAccepted) {

@@ -1,6 +1,8 @@
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_cropper/image_cropper.dart';
@@ -26,10 +28,13 @@ class EditProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
+  final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _handleController = TextEditingController();
   bool _isLoading = false;
   String? _avatarUrl;
+
+  static final _handleRegex = RegExp(r'^[a-z0-9_]{3,30}$');
 
   @override
   void initState() {
@@ -71,9 +76,11 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
           onPressed: () => context.pop(),
         ),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
+      body: Form(
+        key: _formKey,
+        child: ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
           // Avatar with working photo picker
           Center(
             child: GestureDetector(
@@ -123,6 +130,8 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
             ),
             textCapitalization: TextCapitalization.words,
             textInputAction: TextInputAction.next,
+            validator: (v) =>
+                (v == null || v.trim().isEmpty) ? 'Enter a display name' : null,
           ),
           const SizedBox(height: 16),
 
@@ -136,6 +145,20 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
             ),
             autocorrect: false,
             textInputAction: TextInputAction.done,
+            inputFormatters: [
+              TextInputFormatter.withFunction(
+                (oldValue, newValue) =>
+                    newValue.copyWith(text: newValue.text.toLowerCase()),
+              ),
+            ],
+            validator: (v) {
+              final handle = v?.trim() ?? '';
+              if (handle.isEmpty) return null; // handle is optional
+              if (!_handleRegex.hasMatch(handle)) {
+                return '3-30 characters: lowercase letters, numbers, _';
+              }
+              return null;
+            },
           ),
           const SizedBox(height: 32),
 
@@ -152,8 +175,9 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                     ),
                   )
                 : const Text('Save Changes'),
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -286,6 +310,8 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   }
 
   Future<void> _save() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+
     final user = ref.read(currentUserProvider);
     if (user == null) return;
 
@@ -294,13 +320,13 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     try {
       final repo = ref.read(profileRepositoryProvider);
 
+      final handle = _handleController.text.trim().toLowerCase();
       await repo.updateProfile(
         userId: user.id,
-        displayName: _nameController.text.trim(),
-        handle: _handleController.text.trim().isEmpty
-            ? null
-            : _handleController.text.trim(),
-        avatarUrl: _avatarUrl,
+        displayName: Value(_nameController.text.trim()),
+        handle: Value(handle.isEmpty ? null : handle),
+        // Explicit Value(null) clears a removed photo.
+        avatarUrl: Value(_avatarUrl),
       );
 
       // Trigger immediate sync so avatar uploads right away.

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -24,25 +26,46 @@ class _FollowingScreenState extends ConsumerState<FollowingScreen> {
   List<UserSearchResult> _searchResults = [];
   bool _isSearching = false;
   final Set<String> _followedIds = {};
+  Timer? _debounce;
+  int _searchSeq = 0;
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _searchController.dispose();
     super.dispose();
   }
 
-  Future<void> _search(String query) async {
+  /// Debounce keystrokes so we don't fire a network search per character.
+  void _onQueryChanged(String query) {
+    _debounce?.cancel();
+
     if (query.length < 2) {
-      setState(() => _searchResults = []);
+      _searchSeq++; // invalidate any in-flight search
+      setState(() {
+        _searchResults = [];
+        _isSearching = false;
+      });
       return;
     }
 
+    setState(() {}); // refresh the clear button
+    _debounce = Timer(
+      const Duration(milliseconds: 300),
+      () => _search(query),
+    );
+  }
+
+  Future<void> _search(String query) async {
+    final seq = ++_searchSeq;
     setState(() => _isSearching = true);
 
     final repo = ref.read(followRepositoryProvider);
     final results = await repo.searchUsers(query);
 
-    // Check follow status for results
+    // Re-check follow status for these results so the set reflects the
+    // current follow state (not stale entries from earlier searches).
+    final followed = <String>{};
     final user = ref.read(currentUserProvider);
     if (user != null) {
       for (final result in results) {
@@ -50,16 +73,20 @@ class _FollowingScreenState extends ConsumerState<FollowingScreen> {
           followerId: user.id,
           followingId: result.id,
         );
-        if (isFollowing) _followedIds.add(result.id);
+        if (isFollowing) followed.add(result.id);
       }
     }
 
-    if (mounted) {
-      setState(() {
-        _searchResults = results;
-        _isSearching = false;
-      });
-    }
+    // Ignore stale responses that finished after a newer search started.
+    if (!mounted || seq != _searchSeq) return;
+
+    setState(() {
+      _searchResults = results;
+      _followedIds
+        ..clear()
+        ..addAll(followed);
+      _isSearching = false;
+    });
   }
 
   Future<void> _toggleFollow(String targetId) async {
@@ -116,7 +143,7 @@ class _FollowingScreenState extends ConsumerState<FollowingScreen> {
                         icon: const Icon(LucideIcons.x, size: 18),
                         onPressed: () {
                           _searchController.clear();
-                          setState(() => _searchResults = []);
+                          _onQueryChanged('');
                         },
                       )
                     : null,
@@ -131,7 +158,7 @@ class _FollowingScreenState extends ConsumerState<FollowingScreen> {
                   vertical: 12,
                 ),
               ),
-              onChanged: _search,
+              onChanged: _onQueryChanged,
             ),
           ),
 

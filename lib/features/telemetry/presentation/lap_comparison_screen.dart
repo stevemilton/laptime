@@ -6,10 +6,12 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../../core/database/app_database.dart';
+import '../../../core/providers/preferences_provider.dart';
 import '../../../core/services/sensor_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/format_utils.dart';
+import '../../../core/utils/trace_codec.dart';
 import '../../../core/widgets/widgets.dart';
 import '../../session/data/session_repository.dart';
 import '../data/telemetry_processor.dart';
@@ -50,6 +52,8 @@ class _LapComparisonScreenState extends ConsumerState<LapComparisonScreen>
 
   ProcessedTelemetry? _telemetry1;
   ProcessedTelemetry? _telemetry2;
+  List<double> _traceSpeed1 = [];
+  List<double> _traceSpeed2 = [];
   List<GGPoint> _gg1 = [];
   List<GGPoint> _gg2 = [];
 
@@ -74,6 +78,10 @@ class _LapComparisonScreenState extends ConsumerState<LapComparisonScreen>
     final lap1 = await repo.getLap(widget.lap1Id);
     final lap2 = await repo.getLap(widget.lap2Id);
 
+    // GPS traces drive the speed channel (Doppler speed per point).
+    final trace1 = TraceCodec.decode(lap1?.traceJson);
+    final trace2 = TraceCodec.decode(lap2?.traceJson);
+
     // Load sensor data for both laps
     final sensor1 = await repo.getLapSensorData(widget.lap1Id);
     final sensor2 = await repo.getLapSensorData(widget.lap2Id);
@@ -85,15 +93,19 @@ class _LapComparisonScreenState extends ConsumerState<LapComparisonScreen>
 
     if (sensor1 != null) {
       final snapshot = _sensorDataToSnapshot(sensor1);
-      t1 = TelemetryProcessor.processSensorData(snapshot);
+      t1 = TelemetryProcessor.processSensorData(snapshot, trace: trace1);
       gg1 = TelemetryProcessor.computeGGData(t1, downsample: 3);
     }
 
     if (sensor2 != null) {
       final snapshot = _sensorDataToSnapshot(sensor2);
-      t2 = TelemetryProcessor.processSensorData(snapshot);
+      t2 = TelemetryProcessor.processSensorData(snapshot, trace: trace2);
       gg2 = TelemetryProcessor.computeGGData(t2, downsample: 3);
     }
+
+    // Speed straight from the trace when there's no sensor data.
+    final (ts1, sp1) = TelemetryProcessor.traceSpeedSeries(trace1);
+    final (ts2, sp2) = TelemetryProcessor.traceSpeedSeries(trace2);
 
     if (!mounted) return;
 
@@ -102,6 +114,8 @@ class _LapComparisonScreenState extends ConsumerState<LapComparisonScreen>
       _lap2 = lap2;
       _telemetry1 = t1;
       _telemetry2 = t2;
+      _traceSpeed1 = sp1;
+      _traceSpeed2 = sp2;
       _gg1 = gg1;
       _gg2 = gg2;
       _isLoading = false;
@@ -410,17 +424,31 @@ class _LapComparisonScreenState extends ConsumerState<LapComparisonScreen>
   }
 
   Widget _buildSpeedTab() {
-    if (_telemetry1 == null) return _buildNoDataPlaceholder('Speed');
+    // Prefer the sensor-aligned GPS speed channel; fall back to the raw
+    // trace speed series for laps without sensor data.
+    final speed1 = (_telemetry1?.hasSpeed ?? false)
+        ? _telemetry1!.speed
+        : _traceSpeed1;
+    final speed2 = (_telemetry2?.hasSpeed ?? false)
+        ? _telemetry2!.speed
+        : _traceSpeed2;
+    if (speed1.isEmpty) return _buildNoDataPlaceholder('Speed');
+
+    final units = ref.watch(unitsProvider);
+    final unit = FormatUtils.speedUnit(units);
+    List<double> convert(List<double> kmh) => kmh
+        .map((v) => FormatUtils.kmhToDisplay(v, units: units))
+        .toList();
 
     return Padding(
       padding: const EdgeInsets.all(16),
       child: TelemetryChart(
-        title: 'Speed (km/h)',
-        data1: _telemetry1!.speed,
-        data2: _telemetry2?.speed,
+        title: 'Speed ($unit)',
+        data1: convert(speed1),
+        data2: speed2.isNotEmpty ? convert(speed2) : null,
         label1: _lapLabel(_lap1),
         label2: _lapLabel(_lap2),
-        yAxisLabel: 'km/h',
+        yAxisLabel: unit,
         height: 240,
       ),
     );

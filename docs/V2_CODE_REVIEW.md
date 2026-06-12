@@ -1,5 +1,14 @@
 # LapTime — Full Code Review & v2 Readiness Assessment
 
+> **Status (2026-06-12): addressed.** Every critical and high finding below
+> (and most mediums) was implemented for v2 in PR #2, which also ran a
+> seven-angle review pass over the implementation itself. Remaining known
+> debt: team/crew repository helper duplication (~150 lines), picker-sheet
+> duplication on the record screen, GeoUtils degree-space vs meters-frame
+> projection consolidation, in-lap traces are discarded rather than stored,
+> and the "Nearby" feed is still global. See the PR description for the
+> deployment checklist (SQL migration + build_runner + flutter test).
+
 Date: 2026-06-12. Scope: entire `lib/` tree (~20k lines), all 4 Supabase migrations, iOS config, pubspec. Review method: line-by-line review of the recording/telemetry pipeline, plus three deep reviews of (1) the data/sync layer, (2) social/feed/sectors, (3) app shell/auth/iOS.
 
 ## Executive summary

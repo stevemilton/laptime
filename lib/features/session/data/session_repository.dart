@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/database/app_database.dart';
 import '../../../core/providers/database_provider.dart';
+import '../../../core/services/sync_payloads.dart';
 
 /// Repository for session CRUD operations using the local Drift database.
 ///
@@ -86,31 +87,30 @@ class SessionRepository {
   /// Update session details (car, tyres, track condition, notes, privacy).
   ///
   /// Writes to local DB, then enqueues the change to the sync queue.
+  /// Uses drift's [Value] tristate (same convention as the car/profile
+  /// repositories): `Value.absent()` leaves the field untouched,
+  /// `Value(null)` clears it.
   Future<void> updateSession({
     required String sessionId,
-    String? circuitName,
-    String? carId,
-    String? trackCondition,
-    String? tyreBrand,
-    String? tyreCompound,
-    int? tyreAgeLaps,
-    String? setupNotes,
-    String? sessionNotes,
+    Value<String?> circuitName = const Value.absent(),
+    Value<String?> carId = const Value.absent(),
+    Value<String?> trackCondition = const Value.absent(),
+    Value<String?> tyreBrand = const Value.absent(),
+    Value<String?> tyreCompound = const Value.absent(),
+    Value<int?> tyreAgeLaps = const Value.absent(),
+    Value<String?> setupNotes = const Value.absent(),
+    Value<String?> sessionNotes = const Value.absent(),
     bool? isPublic,
   }) async {
     final companion = LocalSessionsCompanion(
-      circuitName: Value(circuitName),
-      carId: carId != null ? Value(carId) : const Value.absent(),
-      trackCondition: trackCondition != null
-          ? Value(trackCondition)
-          : const Value.absent(),
-      tyreBrand: tyreBrand != null ? Value(tyreBrand) : const Value.absent(),
-      tyreCompound:
-          tyreCompound != null ? Value(tyreCompound) : const Value.absent(),
-      tyreAgeLaps:
-          tyreAgeLaps != null ? Value(tyreAgeLaps) : const Value.absent(),
-      setupNotes: Value(setupNotes),
-      sessionNotes: Value(sessionNotes),
+      circuitName: circuitName,
+      carId: carId,
+      trackCondition: trackCondition,
+      tyreBrand: tyreBrand,
+      tyreCompound: tyreCompound,
+      tyreAgeLaps: tyreAgeLaps,
+      setupNotes: setupNotes,
+      sessionNotes: sessionNotes,
       isPublic: isPublic != null ? Value(isPublic) : const Value.absent(),
     );
 
@@ -118,32 +118,14 @@ class SessionRepository {
           ..where((t) => t.id.equals(sessionId)))
         .write(companion);
 
-    // Build payload for sync queue
+    // Enqueue the full updated row so the server-side upsert is complete.
     final session = await getSession(sessionId);
     if (session != null) {
-      final payload = <String, dynamic>{
-        'id': session.id,
-        'user_id': session.userId,
-        'car_id': session.carId,
-        'circuit_id': session.circuitId,
-        'circuit_name': session.circuitName,
-        'started_at': session.startedAt.toIso8601String(),
-        'ended_at': session.endedAt?.toIso8601String(),
-        'track_condition': session.trackCondition,
-        'tyre_brand': session.tyreBrand,
-        'tyre_compound': session.tyreCompound,
-        'tyre_age_laps': session.tyreAgeLaps,
-        'setup_notes': session.setupNotes,
-        'session_notes': session.sessionNotes,
-        'weather_json': session.weatherJson,
-        'is_public': session.isPublic,
-      };
-
       await _db.enqueueSync(
         targetTable: 'sessions',
         operation: 'update',
         recordId: sessionId,
-        payloadJson: jsonEncode(payload),
+        payloadJson: jsonEncode(SyncPayloads.session(session)),
       );
     }
   }

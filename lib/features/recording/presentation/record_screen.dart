@@ -19,6 +19,8 @@ import '../../../core/utils/format_utils.dart';
 import '../../../core/widgets/weather_strip.dart';
 import '../../../core/widgets/gps_indicator.dart';
 import '../../../core/providers/preferences_provider.dart';
+import '../data/circuit_repository.dart';
+import 'circuit_create_screen.dart';
 import 'recording_controller.dart';
 
 /// Provider for the most recent session.
@@ -64,6 +66,12 @@ class _RecordScreenState extends ConsumerState<RecordScreen>
   bool _weatherLoading = true;
   String? _weatherError; // User-visible weather error
 
+  // Session setup
+  LocalCircuit? _circuit;
+  LocalCar? _car;
+  bool _circuitDetecting = false;
+  GpsPoint? _lastFix;
+
   @override
   void initState() {
     super.initState();
@@ -78,11 +86,42 @@ class _RecordScreenState extends ConsumerState<RecordScreen>
 
     _checkGps();
     _fetchWeather();
+
+    // Finalize and sync any session left open by a crash.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(recordingControllerProvider.notifier).recoverOrphanedSessions();
+    });
+  }
+
+  /// Refresh the circuit catalogue and auto-select the nearest circuit.
+  Future<void> _detectCircuit() async {
+    if (_circuitDetecting) return;
+    setState(() => _circuitDetecting = true);
+    try {
+      final repo = ref.read(circuitRepositoryProvider);
+      // Catalogue refresh and GPS fix are independent — run them together
+      // so a slow connection doesn't delay detection past session start.
+      final results = await Future.wait<dynamic>([
+        repo.refreshFromRemote(),
+        _locationService.getCurrentPosition(),
+      ]);
+      final fix = results[1] as GpsPoint?;
+      if (fix == null) return;
+      _lastFix = fix;
+      final nearest =
+          await repo.nearestCircuit(fix.latitude, fix.longitude);
+      if (mounted && nearest != null) {
+        setState(() => _circuit = nearest);
+      }
+    } finally {
+      if (mounted) setState(() => _circuitDetecting = false);
+    }
   }
 
   Future<void> _checkGps() async {
     final ready = await _locationService.checkPermissions();
     if (mounted) setState(() => _gpsReady = ready);
+    if (ready) _detectCircuit();
 
     // Start continuous GPS stream to show live accuracy
     if (ready) {
@@ -196,8 +235,14 @@ class _RecordScreenState extends ConsumerState<RecordScreen>
 
           // Weather strip
           Padding(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
             child: _buildWeatherStrip(),
+          ),
+
+          // Session setup: circuit (arms auto lap detection) + car
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: _buildSetupCard(),
           ),
 
           const Spacer(),
@@ -304,6 +349,174 @@ class _RecordScreenState extends ConsumerState<RecordScreen>
       windSpeed: FormatUtils.formatWindSpeed(w.windSpeed, units: units),
       pressure: FormatUtils.formatPressure(w.pressure, units: units),
     );
+  }
+
+  Widget _buildSetupCard() {
+    final circuitValue = _circuit?.name ??
+        (_circuitDetecting ? 'Detecting…' : 'None — manual laps');
+    final carValue = _car != null ? '${_car!.make} ${_car!.model}' : 'None';
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(AppRadii.md),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        children: [
+          _SetupRow(
+            icon: LucideIcons.mapPin,
+            label: 'Circuit',
+            value: circuitValue,
+            onTap: _pickCircuit,
+          ),
+          const Divider(height: 1, color: AppColors.border),
+          _SetupRow(
+            icon: LucideIcons.car,
+            label: 'Car',
+            value: carValue,
+            onTap: _pickCar,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickCircuit() async {
+    final fix = _lastFix ?? await _locationService.getCurrentPosition();
+    if (!mounted) return;
+    if (fix == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Waiting for a GPS fix…')),
+      );
+      return;
+    }
+    _lastFix = fix;
+
+    final repo = ref.read(circuitRepositoryProvider);
+    final nearby = await repo.circuitsByDistance(fix.latitude, fix.longitude);
+    if (!mounted) return;
+
+    final selected = await showModalBottomSheet<Object>(
+      context: context,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadii.lg)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+              child: Text('SELECT CIRCUIT', style: AppTypography.sectionLabel),
+            ),
+            ListTile(
+              leading:
+                  const Icon(LucideIcons.circleSlash, color: AppColors.textTertiary),
+              title: const Text('No circuit (manual laps)'),
+              onTap: () => Navigator.of(sheetContext).pop('none'),
+            ),
+            for (final entry in nearby.take(12))
+              ListTile(
+                leading: const Icon(LucideIcons.mapPin, color: AppColors.purple),
+                title: Text(entry.circuit.name),
+                subtitle: Text(
+                  entry.distanceMeters < 1000
+                      ? '${entry.distanceMeters.round()} m away'
+                      : '${(entry.distanceMeters / 1000).toStringAsFixed(1)} km away',
+                ),
+                trailing: entry.circuit.startFinishLineJson != null
+                    ? const Icon(LucideIcons.flag,
+                        size: 16, color: AppColors.green)
+                    : null,
+                onTap: () => Navigator.of(sheetContext).pop(entry.circuit),
+              ),
+            ListTile(
+              leading: const Icon(LucideIcons.plus, color: AppColors.purple),
+              title: const Text('Create circuit here'),
+              subtitle: const Text('Draw the start/finish line on a map'),
+              onTap: () => Navigator.of(sheetContext).pop('create'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || selected == null) return;
+
+    if (selected == 'none') {
+      setState(() => _circuit = null);
+    } else if (selected == 'create') {
+      final created = await Navigator.of(context).push<LocalCircuit>(
+        MaterialPageRoute(
+          builder: (_) => CircuitCreateScreen(
+            initialLat: fix.latitude,
+            initialLng: fix.longitude,
+          ),
+        ),
+      );
+      if (created != null && mounted) {
+        setState(() => _circuit = created);
+      }
+    } else if (selected is LocalCircuit) {
+      setState(() => _circuit = selected);
+    }
+  }
+
+  Future<void> _pickCar() async {
+    final user = ref.read(currentUserProvider);
+    if (user == null) return;
+    final db = ref.read(databaseProvider);
+    final cars = await (db.select(db.localCars)
+          ..where((t) => t.userId.equals(user.id)))
+        .get();
+    if (!mounted) return;
+
+    final selected = await showModalBottomSheet<Object>(
+      context: context,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadii.lg)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+              child: Text('SELECT CAR', style: AppTypography.sectionLabel),
+            ),
+            ListTile(
+              leading: const Icon(LucideIcons.circleSlash,
+                  color: AppColors.textTertiary),
+              title: const Text('No car'),
+              onTap: () => Navigator.of(sheetContext).pop('none'),
+            ),
+            for (final car in cars)
+              ListTile(
+                leading: const Icon(LucideIcons.car, color: AppColors.purple),
+                title: Text('${car.make} ${car.model}'),
+                subtitle: car.year != null ? Text('${car.year}') : null,
+                onTap: () => Navigator.of(sheetContext).pop(car),
+              ),
+            if (cars.isEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+                child: Text(
+                  'Add cars in Profile → Garage',
+                  style: AppTypography.bodySmall.copyWith(
+                    color: AppColors.textTertiary,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || selected == null) return;
+    setState(() => _car = selected == 'none' ? null : selected as LocalCar);
   }
 
   Widget _buildLastSessionCard(LocalSession? session) {
@@ -431,11 +644,60 @@ class _RecordScreenState extends ConsumerState<RecordScreen>
     // Start recording
     final sessionId = await ref
         .read(recordingControllerProvider.notifier)
-        .startSession();
+        .startSession(circuitId: _circuit?.id, carId: _car?.id);
 
     if (sessionId != null && mounted) {
       // Navigate to active recording screen
       context.push('/recording');
     }
+  }
+}
+
+/// One row of the pre-recording setup card (circuit / car selection).
+class _SetupRow extends StatelessWidget {
+  const _SetupRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: AppColors.purple),
+            const SizedBox(width: 10),
+            Text(
+              label,
+              style: AppTypography.bodySmall.copyWith(
+                color: AppColors.textTertiary,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                value,
+                textAlign: TextAlign.right,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.bodyMedium,
+              ),
+            ),
+            const SizedBox(width: 4),
+            const Icon(LucideIcons.chevronRight,
+                size: 16, color: AppColors.textTertiary),
+          ],
+        ),
+      ),
+    );
   }
 }

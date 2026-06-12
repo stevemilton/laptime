@@ -19,18 +19,27 @@ import '../../social/data/team_providers.dart';
 import 'comment_sheet.dart';
 import 'sector_sheet.dart';
 
-/// Feed provider for the "Following" tab.
-final followingFeedProvider = FutureProvider<List<FeedItem>>((ref) async {
+/// Feed provider for the "Following" tab, one instance per page index.
+final followingFeedProvider =
+    FutureProvider.family<List<FeedItem>, int>((ref, page) async {
   final user = ref.watch(currentUserProvider);
   if (user == null) return [];
   final repo = ref.read(feedRepositoryProvider);
-  return repo.getFollowingFeed(userId: user.id);
+  return repo.getFollowingFeed(
+    userId: user.id,
+    limit: feedPageSize,
+    offset: page * feedPageSize,
+  );
 });
 
-/// Feed provider for the "Nearby" tab.
-final nearbyFeedProvider = FutureProvider<List<FeedItem>>((ref) async {
+/// Feed provider for the "Nearby" tab, one instance per page index.
+final nearbyFeedProvider =
+    FutureProvider.family<List<FeedItem>, int>((ref, page) async {
   final repo = ref.read(feedRepositoryProvider);
-  return repo.getNearbyFeed();
+  return repo.getNearbyFeed(
+    limit: feedPageSize,
+    offset: page * feedPageSize,
+  );
 });
 
 /// Feed tab screen with Following/Nearby/Teams tabs.
@@ -111,36 +120,117 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
   }
 }
 
-class _FeedList extends ConsumerWidget {
-  const _FeedList({required this.feedProvider});
+/// Paginated, pull-to-refresh feed list. Watches one provider per page and
+/// appends pages as the user scrolls near the bottom.
+class _FeedList extends ConsumerStatefulWidget {
+  const _FeedList({
+    required this.feedProvider,
+    this.emptyTitle = 'No sessions yet',
+    this.emptySubtitle =
+        'Record a session or follow other drivers to build your feed.',
+  });
 
-  final FutureProvider<List<FeedItem>> feedProvider;
+  final FutureProviderFamily<List<FeedItem>, int> feedProvider;
+  final String emptyTitle;
+  final String emptySubtitle;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final feedAsync = ref.watch(feedProvider);
+  ConsumerState<_FeedList> createState() => _FeedListState();
+}
 
-    return feedAsync.when(
-      data: (items) {
-        if (items.isEmpty) {
-          return EmptyState(
-            icon: LucideIcons.rss,
-            title: 'No sessions yet',
-            subtitle:
-                'Record a session or follow other drivers to build your feed.',
-          );
-        }
+class _FeedListState extends ConsumerState<_FeedList> {
+  int _pageCount = 1;
 
-        return ListView.separated(
+  Future<void> _refresh() async {
+    setState(() => _pageCount = 1);
+    ref.invalidate(widget.feedProvider);
+    // Surface refresh errors via the provider state, not the indicator.
+    try {
+      await ref.read(widget.feedProvider(0).future);
+    } catch (_) {}
+  }
+
+  void _loadMore(int fromPageCount) {
+    // Ignore duplicate notifications fired before the rebuild lands.
+    if (_pageCount != fromPageCount) return;
+    setState(() => _pageCount = fromPageCount + 1);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pages = [
+      for (var page = 0; page < _pageCount; page++)
+        ref.watch(widget.feedProvider(page)),
+    ];
+
+    final first = pages.first;
+    if (first.isLoading && !first.hasValue) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (first.hasError && !first.hasValue) {
+      return EmptyState(
+        icon: LucideIcons.wifiOff,
+        title: 'Could not load feed',
+        subtitle: 'Check your connection and try again.',
+        actionLabel: 'Retry',
+        onAction: _refresh,
+      );
+    }
+
+    final items = <FeedItem>[
+      for (final page in pages) ...page.valueOrNull ?? const [],
+    ];
+
+    final lastPage = pages.last;
+    final loadingMore = _pageCount > 1 && lastPage.isLoading;
+    final hasMore = !lastPage.isLoading &&
+        (lastPage.valueOrNull?.length ?? 0) >= feedPageSize;
+    final builtPageCount = _pageCount;
+
+    if (items.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: _refresh,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            const SizedBox(height: 80),
+            EmptyState(
+              icon: LucideIcons.rss,
+              title: widget.emptyTitle,
+              subtitle: widget.emptySubtitle,
+            ),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      child: NotificationListener<ScrollNotification>(
+        onNotification: (notification) {
+          if (hasMore &&
+              !loadingMore &&
+              notification.metrics.extentAfter < 400) {
+            _loadMore(builtPageCount);
+          }
+          return false;
+        },
+        child: ListView.separated(
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(20),
-          itemCount: items.length,
+          itemCount: items.length + (loadingMore ? 1 : 0),
           separatorBuilder: (_, _) => const SizedBox(height: 12),
-          itemBuilder: (context, index) => _FeedCard(item: items[index]),
-        );
-      },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(
-        child: Text('Error loading feed: $e'),
+          itemBuilder: (context, index) {
+            if (index >= items.length) {
+              // Loading footer while the next page is fetched.
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            return _FeedCard(item: items[index]);
+          },
+        ),
       ),
     );
   }
@@ -263,6 +353,13 @@ class _FeedCard extends ConsumerWidget {
   }
 }
 
+/// Optimistic like state keyed by session id. Lives outside the widget so
+/// it survives ListView recycling — the cached FeedItem keeps its
+/// pre-toggle counts until the next refetch, and a recycled pill must not
+/// visually revert a like the user already made.
+final _likeOverridesProvider =
+    StateProvider<Map<String, ({bool isLiked, int likeCount})>>((ref) => {});
+
 class _LikePill extends ConsumerStatefulWidget {
   const _LikePill({required this.item});
 
@@ -280,17 +377,29 @@ class _LikePillState extends ConsumerState<_LikePill> {
   @override
   void initState() {
     super.initState();
-    _isLiked = widget.item.isLikedByMe;
-    _likeCount = widget.item.likeCount;
+    _syncFromSource();
   }
 
   @override
   void didUpdateWidget(covariant _LikePill oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.item.sessionId != widget.item.sessionId) {
-      _isLiked = widget.item.isLikedByMe;
-      _likeCount = widget.item.likeCount;
+      _syncFromSource();
     }
+  }
+
+  void _syncFromSource() {
+    final override =
+        ref.read(_likeOverridesProvider)[widget.item.sessionId];
+    _isLiked = override?.isLiked ?? widget.item.isLikedByMe;
+    _likeCount = override?.likeCount ?? widget.item.likeCount;
+  }
+
+  void _storeOverride() {
+    ref.read(_likeOverridesProvider.notifier).update((overrides) => {
+          ...overrides,
+          widget.item.sessionId: (isLiked: _isLiked, likeCount: _likeCount),
+        });
   }
 
   Future<void> _toggle() async {
@@ -305,14 +414,13 @@ class _LikePillState extends ConsumerState<_LikePill> {
       _isLiked = !_isLiked;
       _likeCount += _isLiked ? 1 : -1;
     });
+    _storeOverride();
 
     try {
       final repo = LikeRepository(ref.read(databaseProvider));
       await repo.toggleLike(widget.item.sessionId, user.id);
-
-      // Invalidate feed providers to refresh counts on next load
-      ref.invalidate(followingFeedProvider);
-      ref.invalidate(nearbyFeedProvider);
+      // No feed invalidation: the pill already updated optimistically and
+      // a refetch would race the sync queue (and reset pagination).
     } catch (_) {
       // Revert on error
       if (mounted) {
@@ -320,6 +428,7 @@ class _LikePillState extends ConsumerState<_LikePill> {
           _isLiked = !_isLiked;
           _likeCount += _isLiked ? 1 : -1;
         });
+        _storeOverride();
       }
     } finally {
       if (mounted) setState(() => _toggling = false);
@@ -392,34 +501,11 @@ class _TeamsFeedTab extends ConsumerWidget {
           );
         }
 
-        // Has teams — show their feed
-        final feedAsync = ref.watch(teamsFeedProvider);
-        return feedAsync.when(
-          data: (items) {
-            if (items.isEmpty) {
-              return const EmptyState(
-                icon: LucideIcons.rss,
-                title: 'No team sessions yet',
-                subtitle:
-                    'Sessions from your teammates will appear here.',
-              );
-            }
-
-            return ListView.separated(
-              padding: const EdgeInsets.all(20),
-              itemCount: items.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 12),
-              itemBuilder: (context, index) =>
-                  _FeedCard(item: items[index]),
-            );
-          },
-          loading: () =>
-              const Center(child: CircularProgressIndicator()),
-          error: (_, __) => const EmptyState(
-            icon: LucideIcons.alertCircle,
-            title: 'Something went wrong',
-            subtitle: 'Could not load team feed. Pull to refresh.',
-          ),
+        // Has teams — show their paginated feed
+        return _FeedList(
+          feedProvider: teamsFeedProvider,
+          emptyTitle: 'No team sessions yet',
+          emptySubtitle: 'Sessions from your teammates will appear here.',
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),

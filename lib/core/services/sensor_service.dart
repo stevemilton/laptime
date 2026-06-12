@@ -29,7 +29,9 @@ class SensorReading {
 /// Manages phone sensor streams for recording telemetry data.
 ///
 /// Captures:
-/// - Accelerometer at ~50Hz (g-force / braking/lateral)
+/// - User accelerometer at ~50Hz (linear acceleration with gravity removed —
+///   raw accelerometer readings include the ~9.81 m/s² gravity vector, which
+///   would corrupt G-force channels and anything derived from them)
 /// - Gyroscope at ~50Hz (yaw/pitch/roll rate)
 /// - Magnetometer at ~10Hz (heading reference)
 /// - Barometer at ~1Hz (altitude reference / weather)
@@ -39,7 +41,7 @@ class SensorReading {
 /// gyro/mag/baro values are held at their latest reading and sampled whenever
 /// an accel event fires.
 class SensorService {
-  StreamSubscription<AccelerometerEvent>? _accelSub;
+  StreamSubscription<UserAccelerometerEvent>? _accelSub;
   StreamSubscription<GyroscopeEvent>? _gyroSub;
   StreamSubscription<MagnetometerEvent>? _magSub;
   StreamSubscription<BarometerEvent>? _baroSub;
@@ -81,8 +83,8 @@ class SensorService {
     _sessionStart = DateTime.now();
     _clearBuffers();
 
-    // Accelerometer at ~50Hz (20ms interval) — master timeline
-    _accelSub = accelerometerEventStream(
+    // User accelerometer (gravity removed) at ~50Hz — master timeline
+    _accelSub = userAccelerometerEventStream(
       samplingPeriod: const Duration(milliseconds: 20),
     ).listen((event) {
       final ts = _elapsedSeconds();

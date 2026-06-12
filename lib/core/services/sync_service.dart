@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 
 import '../database/app_database.dart';
 import 'image_upload_service.dart';
@@ -20,6 +21,7 @@ class SyncState {
   const SyncState({
     required this.status,
     required this.pendingCount,
+    this.deadLetterCount = 0,
     this.lastError,
   });
 
@@ -28,6 +30,10 @@ class SyncState {
 
   /// Number of items still waiting in the queue.
   final int pendingCount;
+
+  /// Number of items that exhausted their retries and need manual retry
+  /// (surfaced in Settings).
+  final int deadLetterCount;
 
   /// Most recent error message, if any.
   final String? lastError;
@@ -40,11 +46,13 @@ class SyncState {
   SyncState copyWith({
     SyncStatus? status,
     int? pendingCount,
+    int? deadLetterCount,
     Object? lastError = _sentinel,
   }) {
     return SyncState(
       status: status ?? this.status,
       pendingCount: pendingCount ?? this.pendingCount,
+      deadLetterCount: deadLetterCount ?? this.deadLetterCount,
       lastError: lastError == _sentinel ? this.lastError : lastError as String?,
     );
   }
@@ -96,6 +104,22 @@ class SyncService {
 
   /// Number of queue items fetched per processing pass.
   static const int _batchSize = 50;
+
+  /// Tables that other queued rows can reference via FK. A failure (or
+  /// backoff wait) on one of these halts the pass so children enqueued
+  /// behind it don't burn their retries on FK violations. Failures on
+  /// leaf tables (likes, comments, sensor data, ...) skip and continue —
+  /// one poisoned row must not freeze unrelated sync traffic.
+  static const Set<String> _parentTables = {
+    'profiles',
+    'cars',
+    'circuits',
+    'sessions',
+    'laps',
+    'sectors',
+    'teams',
+    'crews',
+  };
 
   Timer? _periodicTimer;
   bool _isSyncing = false;
@@ -149,6 +173,13 @@ class SyncService {
     _processQueue();
   }
 
+  /// Reset all dead-lettered items for another full round of retries,
+  /// then process the queue. Surfaced as "Retry failed sync" in Settings.
+  Future<void> retryDeadLetters() async {
+    await _db.resetDeadLetters(maxRetries: maxRetries);
+    await _processQueue();
+  }
+
   // ── Core Processing Loop ──
 
   Future<void> _processQueue() async {
@@ -165,31 +196,53 @@ class SyncService {
     _emitState(status: SyncStatus.syncing);
 
     try {
-      while (!_disposed) {
+      // FIFO with dependency-aware halting: rows are enqueued
+      // parent-before-child (session before its laps, lap before its
+      // sensor data). A failed or backoff-delayed PARENT row halts the
+      // pass so children behind it don't burn retries on FK violations;
+      // failed leaf rows are skipped so one poisoned like/comment can't
+      // freeze the rest of the queue.
+      String? haltError;
+      var halted = false;
+      var offset = 0;
+      while (!_disposed && !halted) {
         final items = await _db.getPendingSyncItems(
-          limit: _batchSize,
+          limit: _batchSize + offset,
           maxRetries: maxRetries,
         );
+        if (items.length <= offset) break;
 
-        // Filter to only items that are eligible for retry (backoff).
-        final eligible = items.where(_isEligibleForRetry).toList();
-        if (eligible.isEmpty) break;
-
-        for (final item in eligible) {
+        var processedAny = false;
+        for (final item in items.skip(offset)) {
           if (_disposed) break;
-          await _processSingleItem(item);
+          final isParent = _parentTables.contains(item.targetTable);
+          if (!_isEligibleForRetry(item)) {
+            if (isParent) {
+              halted = true;
+              break;
+            }
+            offset++; // leaf in backoff: leave it, keep going
+            continue;
+          }
+          final error = await _processSingleItem(item);
+          processedAny = true;
+          if (error != null) {
+            if (isParent) {
+              haltError = '${item.targetTable}: $error';
+              halted = true;
+              break;
+            }
+            offset++; // failed leaf stays for its backoff retry
+          }
         }
+        if (!processedAny && !halted) break;
       }
-
-      // After processing, update the pending count.
-      final remaining = await _db.getPendingSyncItems(
-        limit: _batchSize,
-        maxRetries: maxRetries,
-      );
 
       _emitState(
         status: SyncStatus.idle,
-        pendingCount: remaining.length,
+        pendingCount: await _db.pendingSyncCount(maxRetries: maxRetries),
+        deadLetterCount: await _db.deadLetterCount(maxRetries: maxRetries),
+        lastError: haltError,
       );
     } catch (e) {
       debugPrint('SyncService: queue processing error: $e');
@@ -221,8 +274,9 @@ class SyncService {
     return true;
   }
 
-  /// Process a single sync queue item.
-  Future<void> _processSingleItem(LocalSyncQueueData item) async {
+  /// Process a single sync queue item. Returns null on success, or the
+  /// error message on failure.
+  Future<String?> _processSingleItem(LocalSyncQueueData item) async {
     try {
       if (item.targetTable == 'lap_sensor_data' &&
           item.operation != 'delete') {
@@ -249,12 +303,14 @@ class SyncService {
       }
 
       await _db.markSyncCompleted(item.id);
+      return null;
     } catch (e) {
       debugPrint(
         'SyncService: failed to sync item ${item.id} '
         '(${item.targetTable}/${item.operation}): $e',
       );
       await _db.markSyncFailed(item.id, e.toString());
+      return e.toString();
     }
   }
 
@@ -334,7 +390,14 @@ class SyncService {
     switch (operation) {
       case 'insert':
       case 'update':
-        await _supabase.from(table).upsert(payload);
+        if (table == 'circuits') {
+          // Reconciliation re-enqueues every locally cached circuit,
+          // including catalogue rows that already exist remotely and
+          // aren't ours to update — insert-or-skip instead of upsert.
+          await _supabase.from(table).upsert(payload, ignoreDuplicates: true);
+        } else {
+          await _supabase.from(table).upsert(payload);
+        }
       case 'delete':
         // Composite-PK tables don't have a single 'id' column.
         // Use payload fields for the delete filter instead.
@@ -342,6 +405,7 @@ class SyncService {
           'team_members': ['team_id', 'user_id'],
           'crew_members': ['crew_id', 'user_id'],
           'session_likes': ['session_id', 'user_id'],
+          'follows': ['follower_id', 'following_id'],
         };
 
         if (compositePkTables.containsKey(table)) {
@@ -356,6 +420,13 @@ class SyncService {
             query = query.eq(col, value);
           }
           await query;
+        } else if (table == 'lap_sensor_data') {
+          // Large records were uploaded as chunk rows carrying parent_id;
+          // an id-only delete would orphan them.
+          await _supabase
+              .from(table)
+              .delete()
+              .or('id.eq.$recordId,parent_id.eq.$recordId');
         } else {
           await _supabase.from(table).delete().eq('id', recordId);
         }
@@ -366,12 +437,17 @@ class SyncService {
 
   // ── Chunked Sensor Data Upload ──
 
+  static const _uuid = Uuid();
+
   /// Upload sensor data, splitting into chunks if the payload exceeds
   /// [sensorChunkSize] bytes.
   ///
   /// Small payloads are upserted as a single row. Large payloads are split
-  /// by dividing the JSON-encoded arrays into roughly equal parts, each
-  /// stored as a separate row with a `chunk_index` field appended.
+  /// by dividing the arrays into roughly equal parts; each part is stored
+  /// as a separate row (fresh UUID) carrying `parent_id`, `chunk_index`
+  /// and `chunk_total` so readers can reassemble the logical record.
+  /// Chunk rows upsert on (parent_id, chunk_index), so retries after a
+  /// partial failure are idempotent.
   Future<void> _uploadSensorData(LocalSyncQueueData item) async {
     final payload = jsonDecode(item.payloadJson) as Map<String, dynamic>;
     final encoded = utf8.encode(item.payloadJson);
@@ -409,14 +485,14 @@ class SyncService {
         .reduce((a, b) => a > b ? a : b);
     final sliceSize = (maxLen / chunkCount).ceil();
 
+    final originalId = payload['id'] as String? ?? item.recordId;
+
     for (var i = 0; i < chunkCount; i++) {
       final chunkPayload = Map<String, dynamic>.from(scalarFields);
 
-      // Override the `id` so each chunk has a unique primary key.
-      final originalId = payload['id'] as String? ?? item.recordId;
-      chunkPayload['id'] = '${originalId}_chunk_$i';
-
-      // Keep the original record reference so chunks can be reassembled.
+      // Each chunk is its own row with a real UUID primary key; the
+      // original record reference lives in parent_id.
+      chunkPayload['id'] = _uuid.v4();
       chunkPayload['chunk_index'] = i;
       chunkPayload['chunk_total'] = chunkCount;
       chunkPayload['parent_id'] = originalId;
@@ -424,14 +500,14 @@ class SyncService {
       for (final entry in arrayFields.entries) {
         final start = i * sliceSize;
         final end = min(start + sliceSize, entry.value.length);
-        if (start < entry.value.length) {
-          chunkPayload[entry.key] = jsonEncode(entry.value.sublist(start, end));
-        } else {
-          chunkPayload[entry.key] = jsonEncode(<dynamic>[]);
-        }
+        chunkPayload[entry.key] = start < entry.value.length
+            ? entry.value.sublist(start, end)
+            : <dynamic>[];
       }
 
-      await _supabase.from(item.targetTable).upsert(chunkPayload);
+      await _supabase
+          .from(item.targetTable)
+          .upsert(chunkPayload, onConflict: 'parent_id,chunk_index');
     }
   }
 
@@ -440,6 +516,7 @@ class SyncService {
   void _emitState({
     SyncStatus? status,
     int? pendingCount,
+    int? deadLetterCount,
     String? lastError,
   }) {
     if (_disposed) return;
@@ -447,6 +524,7 @@ class SyncService {
     _currentState = _currentState.copyWith(
       status: status,
       pendingCount: pendingCount,
+      deadLetterCount: deadLetterCount,
       lastError: lastError,
     );
 

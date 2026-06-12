@@ -5,13 +5,17 @@ import 'profile_repository.dart';
 /// Ensures a local profile row exists in Drift for the current Supabase user.
 ///
 /// Used after sign-in and on cold start when a session is restored.
-Future<void> ensureLocalProfile(ProfileRepository repo) async {
+/// [fullName] overrides the metadata lookup - used on first Apple sign-in,
+/// where the provider-supplied name may not be in metadata yet.
+Future<void> ensureLocalProfile(ProfileRepository repo,
+    {String? fullName}) async {
   try {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return;
 
     final meta = user.userMetadata;
-    final name = meta?['full_name'] as String? ??
+    final name = (fullName != null && fullName.isNotEmpty ? fullName : null) ??
+        meta?['full_name'] as String? ??
         meta?['name'] as String? ??
         user.email?.split('@').first ??
         'Driver';

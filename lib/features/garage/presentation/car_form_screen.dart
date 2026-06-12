@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -217,6 +218,14 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
               ),
               keyboardType: TextInputType.number,
               textInputAction: TextInputAction.next,
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) return null;
+                final year = int.tryParse(v.trim());
+                if (year == null || year < 1900 || year > 2100) {
+                  return 'Enter a year between 1900 and 2100';
+                }
+                return null;
+              },
             ),
             const SizedBox(height: 16),
 
@@ -263,6 +272,14 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
               ),
               keyboardType: TextInputType.number,
               textInputAction: TextInputAction.next,
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) return null;
+                final power = int.tryParse(v.trim());
+                if (power == null || power < 0 || power > 3000) {
+                  return 'Enter power between 0 and 3000 hp';
+                }
+                return null;
+              },
             ),
             const SizedBox(height: 16),
 
@@ -278,6 +295,14 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
               ),
               keyboardType: TextInputType.number,
               textInputAction: TextInputAction.next,
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) return null;
+                final weight = int.tryParse(v.trim());
+                if (weight == null || weight < 0 || weight > 5000) {
+                  return 'Enter a weight between 0 and 5000 kg';
+                }
+                return null;
+              },
             ),
             const SizedBox(height: 16),
 
@@ -604,17 +629,19 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
           ? null
           : _tyreSetupController.text.trim();
 
+      // Every field is provided explicitly (Value(null) clears) so that
+      // emptied fields and removed photos are persisted and synced.
       final formData = CarFormData(
-        year: year,
-        carClass: _selectedClass,
-        colour: colour,
-        imageUrl: _imageUrl,
-        powerHp: powerHp,
-        weightKg: weightKg,
-        drivetrain: _isKart ? 'RWD' : _selectedDrivetrain,
-        engineCapacity: engineCapacity,
-        modifications: modifications,
-        tyreSetup: tyreSetup,
+        year: Value(year),
+        carClass: Value(_selectedClass),
+        colour: Value(colour),
+        imageUrl: Value(_imageUrl),
+        powerHp: Value(powerHp),
+        weightKg: Value(weightKg),
+        drivetrain: Value(_isKart ? 'RWD' : _selectedDrivetrain),
+        engineCapacity: Value(engineCapacity),
+        modifications: Value(modifications),
+        tyreSetup: Value(tyreSetup),
       );
 
       if (_isEditing) {

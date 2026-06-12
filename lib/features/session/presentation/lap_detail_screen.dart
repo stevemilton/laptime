@@ -11,6 +11,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/format_utils.dart';
+import '../../../core/utils/trace_codec.dart';
 import '../../../core/widgets/widgets.dart';
 import '../../../core/providers/preferences_provider.dart';
 import '../../telemetry/data/telemetry_processor.dart';
@@ -42,6 +43,7 @@ class _LapDetailScreenState extends ConsumerState<LapDetailScreen> {
   LocalCircuit? _circuit;
   List<LocalLap> _allLaps = [];
   ProcessedTelemetry? _telemetry;
+  List<double> _traceSpeed = [];
   bool _isLoading = true;
 
   @override
@@ -64,6 +66,9 @@ class _LapDetailScreenState extends ConsumerState<LapDetailScreen> {
 
       final allLaps = await repo.getSessionLaps(widget.sessionId);
 
+      // GPS trace drives the speed channel (Doppler speed per point).
+      final trace = TraceCodec.decode(lap?.traceJson);
+
       // Load sensor data for telemetry charts
       ProcessedTelemetry? telemetry;
       final sensorData = await repo.getLapSensorData(widget.lapId);
@@ -79,8 +84,9 @@ class _LapDetailScreenState extends ConsumerState<LapDetailScreen> {
           magHeading: _decodeJsonDoubleList(sensorData.magHeadingJson),
           baroPressure: _decodeJsonDoubleList(sensorData.baroPressureJson),
         );
-        telemetry = TelemetryProcessor.processSensorData(snapshot);
+        telemetry = TelemetryProcessor.processSensorData(snapshot, trace: trace);
       }
+      final (_, traceSpeed) = TelemetryProcessor.traceSpeedSeries(trace);
 
       if (!mounted) return;
 
@@ -90,6 +96,7 @@ class _LapDetailScreenState extends ConsumerState<LapDetailScreen> {
         _circuit = circuit;
         _allLaps = allLaps;
         _telemetry = telemetry;
+        _traceSpeed = traceSpeed;
         _isLoading = false;
       });
     } catch (e) {
@@ -331,7 +338,7 @@ class _LapDetailScreenState extends ConsumerState<LapDetailScreen> {
 
   Widget _buildTelemetryCharts() {
     final t = _telemetry;
-    if (t == null) {
+    if (t == null && _traceSpeed.isEmpty) {
       return AppCard(
         padding: EdgeInsets.zero,
         child: Container(
@@ -359,44 +366,56 @@ class _LapDetailScreenState extends ConsumerState<LapDetailScreen> {
       );
     }
 
+    final units = ref.watch(unitsProvider);
+    final unit = FormatUtils.speedUnit(units);
+    final speedKmh =
+        (t?.hasSpeed ?? false) ? t!.speed : _traceSpeed;
+    final speed = speedKmh
+        .map((v) => FormatUtils.kmhToDisplay(v, units: units))
+        .toList();
+
     return Column(
       children: [
-        // Speed chart
-        AppCard(
-          padding: const EdgeInsets.all(16),
-          child: TelemetryChart(
-            title: 'Speed (km/h)',
-            data1: t.speed,
-            label1: 'Speed',
-            yAxisLabel: 'km/h',
-            height: 180,
+        // Speed chart (GPS Doppler speed)
+        if (speed.isNotEmpty) ...[
+          AppCard(
+            padding: const EdgeInsets.all(16),
+            child: TelemetryChart(
+              title: 'Speed ($unit)',
+              data1: speed,
+              label1: 'Speed',
+              yAxisLabel: unit,
+              height: 180,
+            ),
           ),
-        ),
-        const SizedBox(height: 12),
-        // Lateral G chart
-        AppCard(
-          padding: const EdgeInsets.all(16),
-          child: TelemetryChart(
-            title: 'Lateral G',
-            data1: t.lateralG,
-            label1: 'Lateral G',
-            yAxisLabel: 'g',
-            height: 180,
+          const SizedBox(height: 12),
+        ],
+        if (t != null) ...[
+          // Lateral G chart
+          AppCard(
+            padding: const EdgeInsets.all(16),
+            child: TelemetryChart(
+              title: 'Lateral G',
+              data1: t.lateralG,
+              label1: 'Lateral G',
+              yAxisLabel: 'g',
+              height: 180,
+            ),
           ),
-        ),
-        const SizedBox(height: 12),
-        // Longitudinal G chart
-        AppCard(
-          padding: const EdgeInsets.all(16),
-          child: TelemetryChart(
-            title: 'Braking / Acceleration',
-            data1: t.longitudinalG,
-            label1: 'Long. G',
-            yAxisLabel: 'g',
-            height: 180,
-            color1: AppColors.red,
+          const SizedBox(height: 12),
+          // Longitudinal G chart
+          AppCard(
+            padding: const EdgeInsets.all(16),
+            child: TelemetryChart(
+              title: 'Braking / Acceleration',
+              data1: t.longitudinalG,
+              label1: 'Long. G',
+              yAxisLabel: 'g',
+              height: 180,
+              color1: AppColors.red,
+            ),
           ),
-        ),
+        ],
       ],
     );
   }

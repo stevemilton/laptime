@@ -3,10 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/preferences_provider.dart';
+import '../../../core/providers/supabase_provider.dart';
 import '../../../core/providers/sync_provider.dart';
 import '../../../core/services/sync_service.dart';
 import '../../../core/utils/format_utils.dart';
@@ -26,6 +30,8 @@ class SettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final syncStatus = ref.watch(syncStatusProvider);
     final pendingCount = ref.watch(pendingSyncCountProvider);
+    final deadLetterCount = ref.watch(deadLetterCountProvider);
+    final userId = ref.watch(currentUserIdProvider);
     final units = ref.watch(unitsProvider);
     final privacy = ref.watch(defaultPrivacyProvider);
     final versionAsync = ref.watch(appVersionProvider);
@@ -62,6 +68,45 @@ class SettingsScreen extends ConsumerWidget {
               );
             },
           ),
+          _SettingsTile(
+            icon: LucideIcons.alertCircle,
+            iconColor:
+                deadLetterCount > 0 ? AppColors.red : AppColors.textTertiary,
+            title: 'Retry Failed Sync',
+            subtitle: deadLetterCount > 0
+                ? '$deadLetterCount item${deadLetterCount == 1 ? '' : 's'} failed to sync'
+                : 'No failed items',
+            onTap: deadLetterCount > 0
+                ? () async {
+                    final messenger = ScaffoldMessenger.of(context);
+                    await ref.read(syncServiceProvider).retryDeadLetters();
+                    messenger.showSnackBar(
+                      const SnackBar(
+                        content: Text('Retrying failed items'),
+                        duration: Duration(seconds: 1),
+                      ),
+                    );
+                  }
+                : null,
+          ),
+          if (userId != null)
+            _SettingsTile(
+              icon: LucideIcons.upload,
+              title: 'Re-upload All Data',
+              subtitle: 'Push everything on this device to the cloud',
+              onTap: () async {
+                final messenger = ScaffoldMessenger.of(context);
+                await ref
+                    .read(reconciliationServiceProvider)
+                    .resyncAll(userId);
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('Re-upload started'),
+                    duration: Duration(seconds: 1),
+                  ),
+                );
+              },
+            ),
 
           const Divider(indent: 56),
 
@@ -77,6 +122,13 @@ class SettingsScreen extends ConsumerWidget {
             title: 'Garage',
             subtitle: 'Manage your cars',
             onTap: () => context.push('/garage'),
+          ),
+          _SettingsTile(
+            icon: LucideIcons.trash2,
+            iconColor: AppColors.red,
+            title: 'Delete Account',
+            subtitle: 'Permanently delete your account and all data',
+            onTap: () => _confirmDeleteAccount(context, ref),
           ),
 
           const Divider(indent: 56),
@@ -134,6 +186,122 @@ class SettingsScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  /// Account deletion (App Store Guideline 5.1.1(v)).
+  ///
+  /// Requires the user to type DELETE, then deletes the server-side
+  /// account via the `delete_account` Postgres function (auth user +
+  /// cascading data), wipes all local data, and signs out.
+  Future<void> _confirmDeleteAccount(BuildContext context, WidgetRef ref) async {
+    final user = ref.read(currentUserProvider);
+    if (user == null) return;
+
+    final confirmController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Delete Account'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'This permanently deletes your account and all of your data '
+                '- sessions, laps, telemetry, cars, sectors, and social '
+                'activity - from LapTime. This cannot be undone.',
+                style: AppTypography.bodyMedium,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Type DELETE to confirm.',
+                style: AppTypography.bodyMedium.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: confirmController,
+                autocorrect: false,
+                enableSuggestions: false,
+                textCapitalization: TextCapitalization.characters,
+                decoration: const InputDecoration(hintText: 'DELETE'),
+                onChanged: (_) => setDialogState(() {}),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: confirmController.text.trim() == 'DELETE'
+                  ? () => Navigator.pop(ctx, true)
+                  : null,
+              style: TextButton.styleFrom(foregroundColor: AppColors.red),
+              child: const Text('Delete Forever'),
+            ),
+          ],
+        ),
+      ),
+    );
+    confirmController.dispose();
+
+    if (confirmed != true || !context.mounted) return;
+    await _deleteAccount(context, ref);
+  }
+
+  Future<void> _deleteAccount(BuildContext context, WidgetRef ref) async {
+    final supabase = ref.read(supabaseClientProvider);
+    final db = ref.read(databaseProvider);
+
+    // Block interaction while deleting.
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    // 1. Delete the auth user server-side; all data cascades.
+    try {
+      await supabase.rpc('delete_account');
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Could not delete account. Check your connection and try again.'),
+            backgroundColor: AppColors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    // 2. Wipe everything local.
+    await db.wipeAllData();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
+
+    if (context.mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+
+    // 3. Sign out - the auth user may already be invalid, so failures
+    // here are expected; fall back to clearing the local session.
+    try {
+      await supabase.auth.signOut();
+    } catch (_) {
+      try {
+        await supabase.auth.signOut(scope: SignOutScope.local);
+      } catch (_) {
+        // Local session cleanup failed; the router will still redirect
+        // once the session expires.
+      }
+    }
   }
 
   void _showUnitPicker(BuildContext context, WidgetRef ref, UnitSystem current) {

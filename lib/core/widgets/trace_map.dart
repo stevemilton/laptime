@@ -1,46 +1,17 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../utils/trace_codec.dart';
 
-/// Parses a JSON trace string into a list of [LatLng] points.
-///
-/// Supports two formats:
-/// - Array of objects: `[{"lat": 51.38, "lng": -0.53}, ...]`
-/// - Array of arrays: `[[lng, lat], ...]` (GeoJSON order)
+/// Parses a stored trace (any [TraceCodec]-supported format) into map
+/// points. Thin wrapper so the trace format evolves in exactly one place.
 List<LatLng> parseTraceJson(String? traceJson) {
-  if (traceJson == null || traceJson.isEmpty) return [];
-  try {
-    final decoded = jsonDecode(traceJson) as List<dynamic>;
-    if (decoded.isEmpty) return [];
-
-    // Detect format from first element
-    final first = decoded.first;
-    if (first is Map) {
-      return decoded.map((e) {
-        final m = e as Map<String, dynamic>;
-        final lat = (m['lat'] ?? m['latitude']) as num;
-        final lng = (m['lng'] ?? m['longitude']) as num;
-        return LatLng(lat.toDouble(), lng.toDouble());
-      }).toList();
-    } else if (first is List) {
-      // GeoJSON order: [lng, lat]
-      return decoded.map((e) {
-        final arr = e as List<dynamic>;
-        return LatLng(
-          (arr[1] as num).toDouble(),
-          (arr[0] as num).toDouble(),
-        );
-      }).toList();
-    }
-  } catch (_) {
-    // Silently fail — return empty
-  }
-  return [];
+  return TraceCodec.decode(traceJson)
+      .map((p) => LatLng(p.lat, p.lng))
+      .toList();
 }
 
 /// Computes the [LatLngBounds] that encloses all given points,

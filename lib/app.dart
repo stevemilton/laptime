@@ -6,14 +6,14 @@ import 'core/providers/sync_provider.dart';
 import 'features/profile/data/profile_providers.dart';
 import 'features/profile/data/ensure_local_profile.dart';
 
-class TestTrackApp extends ConsumerStatefulWidget {
-  const TestTrackApp({super.key});
+class LapTimeApp extends ConsumerStatefulWidget {
+  const LapTimeApp({super.key});
 
   @override
-  ConsumerState<TestTrackApp> createState() => _TestTrackAppState();
+  ConsumerState<LapTimeApp> createState() => _LapTimeAppState();
 }
 
-class _TestTrackAppState extends ConsumerState<TestTrackApp> {
+class _LapTimeAppState extends ConsumerState<LapTimeApp> {
   SyncLifecycleObserver? _syncObserver;
 
   @override
@@ -50,10 +50,14 @@ class _TestTrackAppState extends ConsumerState<TestTrackApp> {
 
   @override
   Widget build(BuildContext context) {
+    // One-shot reconciliation gate: re-uploads local data once per install
+    // after the v2 sync fixes. Must be watched at the app root.
+    ref.watch(resyncGateProvider);
+
     final router = ref.watch(appRouterProvider);
 
     return MaterialApp.router(
-      title: 'TestTrack',
+      title: 'LapTime',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       routerConfig: router,

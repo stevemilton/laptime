@@ -41,6 +41,9 @@ class LapDetectionService {
   /// Whether we've moved far enough from the line to allow another crossing.
   bool _hasMovedAway = true;
 
+  /// Whether a start/finish line is configured (automatic detection active).
+  bool get isArmed => _sfLat1 != null;
+
   /// Configure the start/finish line.
   ///
   /// [lat1, lng1] to [lat2, lng2] defines the line segment.

@@ -64,6 +64,28 @@ abstract final class FormatUtils {
     return '$kmh km/h';
   }
 
+  /// Converts a speed in m/s to the display unit (km/h or mph).
+  static double speedValue(double speedMps, {UnitSystem units = UnitSystem.metric}) {
+    return units == UnitSystem.imperial ? speedMps * 2.236936 : speedMps * 3.6;
+  }
+
+  /// Converts a km/h value to the display unit (used by telemetry charts,
+  /// whose channels are stored in km/h).
+  static double kmhToDisplay(double kmh, {UnitSystem units = UnitSystem.metric}) {
+    return units == UnitSystem.imperial ? kmh / 1.609344 : kmh;
+  }
+
+  /// Unit label for speeds ("km/h" or "mph").
+  static String speedUnit(UnitSystem units) {
+    return units == UnitSystem.imperial ? 'mph' : 'km/h';
+  }
+
+  /// Formats a vehicle speed (input m/s) as a whole number with unit.
+  /// e.g. 33.4 m/s -> "120 km/h" / "75 mph"
+  static String formatSpeed(double speedMps, {UnitSystem units = UnitSystem.metric}) {
+    return '${speedValue(speedMps, units: units).round()} ${speedUnit(units)}';
+  }
+
   /// Formats pressure, respecting unit preference.
   /// Input is always hPa.
   static String formatPressure(double hPa, {UnitSystem units = UnitSystem.metric}) {

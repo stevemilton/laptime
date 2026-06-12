@@ -51,7 +51,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration {
@@ -91,6 +91,10 @@ class AppDatabase extends _$AppDatabase {
           await m.createTable(localSessionLikes);
           await m.createTable(localSessionComments);
         }
+        if (from < 6) {
+          // v6: Mark incomplete laps so PBs/sector scoring can skip them
+          await m.addColumn(localLaps, localLaps.isPartial);
+        }
       },
     );
   }
@@ -119,13 +123,86 @@ class AppDatabase extends _$AppDatabase {
   }) {
     return (select(localSyncQueue)
           ..where((t) => t.retryCount.isSmallerThanValue(maxRetries))
-          ..orderBy([(t) => OrderingTerm.asc(t.createdAt)])
+          // createdAt has second precision; the autoincrement id is the
+          // true FIFO key for items enqueued in the same second.
+          ..orderBy([
+            (t) => OrderingTerm.asc(t.createdAt),
+            (t) => OrderingTerm.asc(t.id),
+          ])
           ..limit(limit))
         .get();
   }
 
+  /// Total number of items still eligible for sync (not dead-lettered).
+  Future<int> pendingSyncCount({int maxRetries = 5}) async {
+    final countExp = localSyncQueue.id.count();
+    final query = selectOnly(localSyncQueue)
+      ..addColumns([countExp])
+      ..where(localSyncQueue.retryCount.isSmallerThanValue(maxRetries));
+    final row = await query.getSingle();
+    return row.read(countExp) ?? 0;
+  }
+
+  /// Items that exhausted their retries and need user-visible recovery.
+  Future<List<LocalSyncQueueData>> getDeadLetterItems({int maxRetries = 5}) {
+    return (select(localSyncQueue)
+          ..where(
+              (t) => t.retryCount.isBiggerOrEqualValue(maxRetries))
+          ..orderBy([(t) => OrderingTerm.asc(t.id)]))
+        .get();
+  }
+
+  /// Number of dead-lettered items.
+  Future<int> deadLetterCount({int maxRetries = 5}) async {
+    final countExp = localSyncQueue.id.count();
+    final query = selectOnly(localSyncQueue)
+      ..addColumns([countExp])
+      ..where(localSyncQueue.retryCount.isBiggerOrEqualValue(maxRetries));
+    final row = await query.getSingle();
+    return row.read(countExp) ?? 0;
+  }
+
+  /// Give all dead-lettered items another full set of retries.
+  Future<void> resetDeadLetters({int maxRetries = 5}) {
+    return (update(localSyncQueue)
+          ..where((t) => t.retryCount.isBiggerOrEqualValue(maxRetries)))
+        .write(const LocalSyncQueueCompanion(
+      retryCount: Value(0),
+      errorMessage: Value(null),
+    ));
+  }
+
+  /// Permanently remove dead-lettered insert/update items (used by
+  /// reconciliation, which re-enqueues fresh payloads built from the local
+  /// rows). Dead-lettered DELETES are reset for retry instead — the local
+  /// row is gone, so a purged delete could never be rebuilt.
+  Future<void> purgeDeadLetters({int maxRetries = 5}) async {
+    await (delete(localSyncQueue)
+          ..where((t) =>
+              t.retryCount.isBiggerOrEqualValue(maxRetries) &
+              t.operation.equals('delete').not()))
+        .go();
+    await (update(localSyncQueue)
+          ..where((t) => t.retryCount.isBiggerOrEqualValue(maxRetries)))
+        .write(const LocalSyncQueueCompanion(
+      retryCount: Value(0),
+      errorMessage: Value(null),
+    ));
+  }
+
   Future<void> markSyncCompleted(int queueId) {
     return (delete(localSyncQueue)..where((t) => t.id.equals(queueId))).go();
+  }
+
+  /// Delete every row in every table. Called on sign-out and account
+  /// deletion so the next user (or a fresh sign-in) starts clean and no
+  /// stale queue items are pushed under another user's credentials.
+  Future<void> wipeAllData() async {
+    await transaction(() async {
+      for (final table in allTables) {
+        await customStatement('DELETE FROM ${table.actualTableName}');
+      }
+    });
   }
 
   Future<void> markSyncFailed(int queueId, String error) async {
