@@ -108,8 +108,8 @@ class _VerifyEmailScreenState extends ConsumerState<VerifyEmailScreen> {
     }
   }
 
-  void _onKeyPress(int index, RawKeyEvent event) {
-    if (event is RawKeyDownEvent &&
+  void _onKeyPress(int index, KeyEvent event) {
+    if (event is KeyDownEvent &&
         event.logicalKey == LogicalKeyboardKey.backspace &&
         _controllers[index].text.isEmpty &&
         index > 0) {
@@ -178,9 +178,9 @@ class _VerifyEmailScreenState extends ConsumerState<VerifyEmailScreen> {
                     margin: EdgeInsets.only(
                       left: i == 0 ? 0 : (i == 3 ? 16 : 8),
                     ),
-                    child: RawKeyboardListener(
+                    child: KeyboardListener(
                       focusNode: FocusNode(),
-                      onKey: (event) => _onKeyPress(i, event),
+                      onKeyEvent: (event) => _onKeyPress(i, event),
                       child: TextField(
                         controller: _controllers[i],
                         focusNode: _focusNodes[i],

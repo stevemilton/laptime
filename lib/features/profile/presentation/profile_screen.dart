@@ -25,7 +25,6 @@ import '../../../core/utils/format_utils.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../social/data/team_providers.dart';
 import '../data/profile_providers.dart';
-import '../data/profile_repository.dart';
 
 /// Cars provider - watches the user's garage.
 final userCarsProvider = StreamProvider<List<LocalCar>>((ref) {

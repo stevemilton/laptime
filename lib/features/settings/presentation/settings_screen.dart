@@ -172,7 +172,8 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(indent: 56),
 
           // Contact & Social section
-          _SectionTitle(title: 'CONNECT'),
+          const SectionHeader(
+              title: 'CONNECT', padding: EdgeInsets.fromLTRB(20, 20, 20, 8)),
           _SettingsTile(
             icon: LucideIcons.mail,
             title: 'Contact Us',

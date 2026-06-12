@@ -918,7 +918,7 @@ class TeamRepository {
           .eq('status', JoinRequestStatus.pending)
           .order('requested_at');
 
-      if (remoteRequests is List && remoteRequests.isNotEmpty) {
+      if (remoteRequests.isNotEmpty) {
         return remoteRequests.map((json) {
           return JoinRequestInfo(
             id: json['id'] as String,

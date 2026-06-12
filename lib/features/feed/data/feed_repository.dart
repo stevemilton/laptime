@@ -110,45 +110,18 @@ class FeedRepository {
 
   String get _currentUserId => _client.auth.currentUser?.id ?? '';
 
-  /// Fetch the current user's own sessions (public and private).
+  /// Fetch the current user's own sessions — including private ones.
   Future<List<FeedItem>> getMySessions({
     required String userId,
     int limit = 20,
     int offset = 0,
-  }) async {
-    try {
-      List response;
-      try {
-        response = await _client
-            .from('sessions')
-            .select(_fullSelect)
-            .eq('user_id', userId)
-            .order('started_at', ascending: false)
-            .range(offset, offset + limit - 1);
-        debugPrint('[Feed] My Sessions full query OK: ${response.length} items');
-      } catch (e) {
-        debugPrint(
-            '[Feed] My Sessions full query failed ($e), using base query');
-        response = await _client
-            .from('sessions')
-            .select(_baseSelect)
-            .eq('user_id', userId)
-            .order('started_at', ascending: false)
-            .range(offset, offset + limit - 1);
-        debugPrint('[Feed] My Sessions base query OK: ${response.length} items');
-      }
-
-      return response
-          .map((json) => FeedItem.fromJson(
-                json as Map<String, dynamic>,
-                currentUserId: _currentUserId,
-              ))
-          .toList();
-    } catch (e, stack) {
-      debugPrint('[Feed] getMySessions ERROR: $e');
-      debugPrint('[Feed] STACK: $stack');
-      return [];
-    }
+  }) {
+    return _fetchSessions(
+      userIds: [userId],
+      limit: limit,
+      offset: offset,
+      publicOnly: false,
+    );
   }
 
   /// Fetch the "Following" feed - public sessions from users you follow.
@@ -222,17 +195,20 @@ class FeedRepository {
     required List<String>? userIds,
     required int limit,
     required int offset,
+    bool publicOnly = true,
   }) async {
     var includesSocial = true;
     List<Map<String, dynamic>> rows;
     try {
-      rows = await _runQuery(_fullSelect, userIds, limit, offset);
+      rows = await _runQuery(_fullSelect, userIds, limit, offset,
+          publicOnly: publicOnly);
     } catch (e) {
       // Only fall back to the base select when the social tables/columns
       // are missing; rethrow everything else (network, RLS, ...).
       if (!_isMissingSchemaError(e)) rethrow;
       includesSocial = false;
-      rows = await _runQuery(_baseSelect, userIds, limit, offset);
+      rows = await _runQuery(_baseSelect, userIds, limit, offset,
+          publicOnly: publicOnly);
     }
 
     final sessionIds = [for (final row in rows) row['id'] as String];
@@ -255,14 +231,17 @@ class FeedRepository {
     String select,
     List<String>? userIds,
     int limit,
-    int offset,
-  ) async {
+    int offset, {
+    bool publicOnly = true,
+  }) async {
     var query = _client.from('sessions').select(select);
     if (userIds != null) {
       query = query.inFilter('user_id', userIds);
     }
+    if (publicOnly) {
+      query = query.eq('is_public', true);
+    }
     return await query
-        .eq('is_public', true)
         .order('started_at', ascending: false)
         .range(offset, offset + limit - 1);
   }

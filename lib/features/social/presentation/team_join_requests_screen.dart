@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/constants/role_constants.dart';
 import '../../../core/providers/supabase_provider.dart';
 import '../../../core/widgets/app_avatar.dart';
 import '../../../core/widgets/app_card.dart';

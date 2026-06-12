@@ -64,7 +64,6 @@ class RecordingRepository {
   Timer? _elapsedTimer;
 
   String? _sessionId;
-  String? _userId;
   DateTime? _sessionStart;
   DateTime? _lapStart;
   int _lapCount = 0;
@@ -114,7 +113,6 @@ class RecordingRepository {
     String? circuitId,
     String? carId,
   }) async {
-    _userId = userId;
     _sessionId = _uuid.v4();
     _sessionStart = DateTime.now();
     _lapStart = _sessionStart;
