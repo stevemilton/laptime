@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build and upload TestTrack IPA to TestFlight.
+# Build and upload the LapTime IPA to TestFlight.
 # Reads API keys from dart_defines.env automatically.
 set -euo pipefail
 
@@ -19,10 +19,34 @@ while IFS='=' read -r key value; do
   DART_DEFINE_ARGS="$DART_DEFINE_ARGS --dart-define=$key=$value"
 done < "$ENV_FILE"
 
-echo "Building TestTrack IPA..."
+# Version comes from pubspec.yaml — the single source of truth.
+# The Runner target picks it up via FLUTTER_BUILD_NAME/NUMBER, but the
+# WatchApp target is a plain Xcode target with no Flutter config, so its
+# Info.plist must be stamped here. App Store Connect tracks the watch
+# bundle id's version independently and rejects uploads that don't
+# increase it (and requires it to match the companion app).
+VERSION_LINE=$(grep '^version:' "$SCRIPT_DIR/pubspec.yaml" | awk '{print $2}')
+BUILD_NAME="${VERSION_LINE%%+*}"
+BUILD_NUMBER="${VERSION_LINE##*+}"
+echo "Version from pubspec: $BUILD_NAME ($BUILD_NUMBER)"
+
+WATCH_PLIST="$SCRIPT_DIR/ios/WatchApp/Info.plist"
+if [ -f "$WATCH_PLIST" ]; then
+  /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $BUILD_NAME" "$WATCH_PLIST"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$WATCH_PLIST"
+  echo "Stamped WatchApp Info.plist to $BUILD_NAME ($BUILD_NUMBER)"
+fi
+
+echo "Building LapTime IPA..."
 flutter build ipa --release $DART_DEFINE_ARGS
 
-IPA_PATH="build/ios/ipa/TestTrack.ipa"
+# flutter names the .ipa after the app; don't assume the display name.
+IPA_PATH=$(ls "$SCRIPT_DIR"/build/ios/ipa/*.ipa | head -1)
+if [ -z "$IPA_PATH" ]; then
+  echo "ERROR: no .ipa found in build/ios/ipa/"
+  exit 1
+fi
+echo "IPA: $IPA_PATH"
 
 # Strip simulator architectures from embedded frameworks inside the IPA.
 # Some Flutter packages ship fat binaries with x86_64 simulator slices
@@ -53,19 +77,41 @@ find "$WORK_DIR/Payload" -name '*.framework' -type d | while read -r framework; 
   fi
 done
 
+# Sanity check: print every bundle's version so a stale/pinned number is
+# visible BEFORE the upload burns an App Store Connect attempt.
+echo ""
+echo "Bundle versions in IPA:"
+find "$WORK_DIR/Payload" -name 'Info.plist' -maxdepth 4 | while read -r plist; do
+  bundle=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$plist" 2>/dev/null) || continue
+  ver=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$plist" 2>/dev/null) || continue
+  build=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$plist" 2>/dev/null) || continue
+  echo "  $bundle: $ver ($build)"
+done
+
 # Re-package the IPA
 cd "$WORK_DIR"
-zip -q -r "$SCRIPT_DIR/$IPA_PATH" Payload
+zip -q -r "$IPA_PATH" Payload
 cd "$SCRIPT_DIR"
 rm -rf "$WORK_DIR"
 echo "IPA re-packaged."
 
 echo ""
 echo "Uploading to TestFlight..."
+UPLOAD_LOG=$(mktemp)
+# altool can exit 0 even when the upload is rejected — check its output.
 xcrun altool --upload-app --type ios \
   -f "$IPA_PATH" \
   --apiKey PTUAC5QR6U \
-  --apiIssuer 951dbb13-6540-4a22-b425-4f00f11d9119
+  --apiIssuer 951dbb13-6540-4a22-b425-4f00f11d9119 \
+  2>&1 | tee "$UPLOAD_LOG"
+
+if grep -q "ERROR" "$UPLOAD_LOG"; then
+  echo ""
+  echo "UPLOAD FAILED — see errors above."
+  rm -f "$UPLOAD_LOG"
+  exit 1
+fi
+rm -f "$UPLOAD_LOG"
 
 echo ""
 echo "Upload complete. Build should appear in TestFlight shortly."
