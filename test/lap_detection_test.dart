@@ -80,10 +80,27 @@ void main() {
     service.processPoint(_point(0, -0.001, 0));
     expect(service.processPoint(_point(0, 0.001, 2000)), isNotNull);
 
-    // Drive away and come back 90 seconds later.
+    // Drive away on the same side and approach the line again without
+    // crossing it (0.005 -> 0.001 stays east of the line), then cross
+    // 88 seconds after the first crossing.
     service.processPoint(_point(0, 0.005, 30000));
-    service.processPoint(_point(0, -0.001, 88000));
-    final next = service.processPoint(_point(0, 0.001, 90000));
+    service.processPoint(_point(0, 0.001, 88000));
+    final next = service.processPoint(_point(0, -0.001, 90000));
     expect(next, isNotNull);
+  });
+
+  test('a full lap that re-crosses during the return leg is detected once',
+      () {
+    final service = arm();
+    service.processPoint(_point(0, -0.001, 0));
+    expect(service.processPoint(_point(0, 0.001, 2000)), isNotNull);
+
+    // The return path itself crosses the line (0.005 -> -0.001): that IS
+    // a lap crossing and must fire...
+    service.processPoint(_point(0, 0.005, 30000));
+    expect(service.processPoint(_point(0, -0.001, 88000)), isNotNull);
+
+    // ...and a re-cross 2 seconds later is a double-trigger: debounced.
+    expect(service.processPoint(_point(0, 0.001, 90000)), isNull);
   });
 }
