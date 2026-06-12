@@ -8,6 +8,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/providers/supabase_provider.dart';
+import '../../auth/presentation/auth_controller.dart';
 import '../../profile/data/profile_providers.dart';
 import '../../profile/data/ensure_local_profile.dart';
 import '../data/disclaimer_repository.dart';
@@ -31,14 +32,31 @@ class DisclaimerScreen extends ConsumerStatefulWidget {
 }
 
 class _DisclaimerScreenState extends ConsumerState<DisclaimerScreen> {
-  bool _accepted = false;
   bool _isSubmitting = false;
+  bool _hasScrolledToBottom = false;
   String _disclaimerText = '';
+  final _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     _loadDisclaimer();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_hasScrolledToBottom) return;
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 20) {
+      setState(() => _hasScrolledToBottom = true);
+    }
   }
 
   Future<void> _loadDisclaimer() async {
@@ -58,7 +76,7 @@ class _DisclaimerScreenState extends ConsumerState<DisclaimerScreen> {
     return Scaffold(
       backgroundColor: AppColors.white,
       appBar: AppBar(
-        title: const Text('Safety Disclaimer'),
+        title: const Text('Disclaimer'),
         automaticallyImplyLeading: false,
       ),
       body: SafeArea(
@@ -106,6 +124,7 @@ class _DisclaimerScreenState extends ConsumerState<DisclaimerScreen> {
                     border: Border.all(color: AppColors.borderLight),
                   ),
                   child: SingleChildScrollView(
+                    controller: _scrollController,
                     child: Text(
                       _disclaimerText,
                       style: AppTypography.bodyMedium.copyWith(
@@ -119,49 +138,9 @@ class _DisclaimerScreenState extends ConsumerState<DisclaimerScreen> {
 
               const SizedBox(height: 16),
 
-              // Acceptance checkbox
-              GestureDetector(
-                onTap: () => setState(() => _accepted = !_accepted),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 24,
-                      height: 24,
-                      decoration: BoxDecoration(
-                        color:
-                            _accepted ? AppColors.purple : AppColors.white,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(
-                          color: _accepted
-                              ? AppColors.purple
-                              : AppColors.border,
-                          width: 2,
-                        ),
-                      ),
-                      child: _accepted
-                          ? const Icon(LucideIcons.check,
-                              size: 16, color: AppColors.white)
-                          : null,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        'I have read and understand this disclaimer. I accept full responsibility for my actions while using LapTime.',
-                        style: AppTypography.bodySmall.copyWith(
-                          color: AppColors.textPrimary,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              // Accept button
+              // I Agree button
               FilledButton(
-                onPressed: _accepted && !_isSubmitting ? _onAccept : null,
+                onPressed: _hasScrolledToBottom && !_isSubmitting ? _onAgree : null,
                 child: _isSubmitting
                     ? const SizedBox(
                         width: 20,
@@ -171,7 +150,19 @@ class _DisclaimerScreenState extends ConsumerState<DisclaimerScreen> {
                           color: AppColors.white,
                         ),
                       )
-                    : const Text('Accept and Continue'),
+                    : const Text('I Agree'),
+              ),
+
+              const SizedBox(height: 12),
+
+              // I Disagree button
+              OutlinedButton(
+                onPressed: _isSubmitting ? null : _onDisagree,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.textSecondary,
+                  side: const BorderSide(color: AppColors.border),
+                ),
+                child: const Text('I Disagree'),
               ),
 
               const SizedBox(height: 16),
@@ -182,7 +173,7 @@ class _DisclaimerScreenState extends ConsumerState<DisclaimerScreen> {
     );
   }
 
-  Future<void> _onAccept() async {
+  Future<void> _onAgree() async {
     final user = ref.read(currentUserProvider);
     if (user == null) {
       if (mounted) {
@@ -229,6 +220,13 @@ class _DisclaimerScreenState extends ConsumerState<DisclaimerScreen> {
       }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  Future<void> _onDisagree() async {
+    await ref.read(authControllerProvider.notifier).signOut();
+    if (mounted) {
+      GoRouter.of(context).go('/login');
     }
   }
 }

@@ -84,6 +84,80 @@ class SessionRepository {
 
   // ── Write operations ──
 
+  /// Discard (delete) a session and all its associated laps and sensor data.
+  ///
+  /// Removes everything from local DB and enqueues delete operations
+  /// for Supabase sync so the data is cleaned up server-side too.
+  Future<void> discardSession(String sessionId) async {
+    final laps = await getSessionLaps(sessionId);
+    final lapIds = laps.map((lap) => lap.id).toList(growable: false);
+    // Sensor rows have UUID primary keys — look them up rather than
+    // deriving ids (the legacy '<lapId>_sensors' scheme no longer exists).
+    final sensorRows = lapIds.isEmpty
+        ? const <LocalLapSensorDataData>[]
+        : await (_db.select(_db.localLapSensorData)
+              ..where((t) => t.lapId.isIn(lapIds)))
+            .get();
+    final sensorIds =
+        sensorRows.map((row) => row.id).toList(growable: false);
+
+    await _db.transaction(() async {
+      // Remove stale queued inserts/updates first so a retry cannot recreate
+      // data after the delete operations have been processed.
+      await _db.removePendingSyncItems(
+        targetTable: 'lap_sensor_data',
+        recordIds: sensorIds,
+      );
+      await _db.removePendingSyncItems(
+        targetTable: 'laps',
+        recordIds: lapIds,
+      );
+      await _db.removePendingSyncItems(
+        targetTable: 'sessions',
+        recordIds: [sessionId],
+      );
+
+      for (final lapId in lapIds) {
+        await (_db.delete(_db.localLapSensorData)
+              ..where((t) => t.lapId.equals(lapId)))
+            .go();
+      }
+
+      for (final sensorId in sensorIds) {
+        await _db.enqueueSync(
+          targetTable: 'lap_sensor_data',
+          operation: 'delete',
+          recordId: sensorId,
+          payloadJson: jsonEncode({'id': sensorId}),
+        );
+      }
+
+      for (final lapId in lapIds) {
+        await (_db.delete(_db.localLaps)
+              ..where((t) => t.id.equals(lapId)))
+            .go();
+
+        await _db.enqueueSync(
+          targetTable: 'laps',
+          operation: 'delete',
+          recordId: lapId,
+          payloadJson: jsonEncode({'id': lapId}),
+        );
+      }
+
+      await (_db.delete(_db.localSessions)
+            ..where((t) => t.id.equals(sessionId)))
+          .go();
+
+      await _db.enqueueSync(
+        targetTable: 'sessions',
+        operation: 'delete',
+        recordId: sessionId,
+        payloadJson: jsonEncode({'id': sessionId}),
+      );
+    });
+  }
+
   /// Update session details (car, tyres, track condition, notes, privacy).
   ///
   /// Writes to local DB, then enqueues the change to the sync queue.

@@ -214,7 +214,7 @@ class ProfileScreen extends ConsumerWidget {
               }
 
               return SizedBox(
-                height: 120,
+                height: 170,
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -566,7 +566,7 @@ class _CarCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 180,
+        width: 150,
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           color: AppColors.white,
@@ -577,71 +577,60 @@ class _CarCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Photo or icon placeholder
-            if (hasImage)
-              SizedBox(
-                height: 56,
-                width: double.infinity,
-                child: Image(
-                  image: car.imageUrl!.startsWith('http')
-                      ? NetworkImage(car.imageUrl!) as ImageProvider
-                      : FileImage(File(car.imageUrl!)),
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, e, s) => _buildIconPlaceholder(isKart),
-                ),
-              )
-            else
-              _buildIconPlaceholder(isKart),
-            // Info
+            // Photo — 80% of card height
             Expanded(
+              flex: 4,
+              child: SizedBox(
+                width: double.infinity,
+                child: hasImage
+                    ? Image(
+                        image: car.imageUrl!.startsWith('http')
+                            ? NetworkImage(car.imageUrl!) as ImageProvider
+                            : FileImage(File(car.imageUrl!)),
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, e, s) =>
+                            _buildIconPlaceholder(isKart),
+                      )
+                    : _buildIconPlaceholder(isKart),
+              ),
+            ),
+            // Info — 20% of card height
+            Expanded(
+              flex: 1,
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                padding: const EdgeInsets.fromLTRB(10, 4, 10, 4),
+                child: Row(
                   children: [
-                    Text(
-                      '${car.make} ${car.model}',
-                      style: AppTypography.bodySmall.copyWith(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
+                    Expanded(
+                      child: Text(
+                        '${car.make} ${car.model}',
+                        style: AppTypography.bodySmall.copyWith(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
-                    const Spacer(),
-                    Row(
-                      children: [
-                        if (car.carClass != null)
-                          Flexible(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 5, vertical: 1),
-                              decoration: BoxDecoration(
-                                color: AppColors.purplePale,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                car.carClass!,
-                                style: AppTypography.labelSmall.copyWith(
-                                  color: AppColors.purple,
-                                  fontSize: 10,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
+                    if (car.carClass != null) ...[
+                      const SizedBox(width: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: AppColors.purplePale,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          car.carClass!,
+                          style: AppTypography.labelSmall.copyWith(
+                            color: AppColors.purple,
+                            fontSize: 10,
                           ),
-                        if (car.powerHp != null) ...[
-                          const SizedBox(width: 4),
-                          Text(
-                            '${car.powerHp}hp',
-                            style: AppTypography.labelSmall.copyWith(
-                              color: AppColors.textTertiary,
-                              fontSize: 10,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -654,13 +643,14 @@ class _CarCard extends StatelessWidget {
 
   Widget _buildIconPlaceholder(bool isKart) {
     return Container(
-      height: 56,
       width: double.infinity,
       color: AppColors.purplePale,
-      child: Icon(
-        isKart ? LucideIcons.gauge : LucideIcons.car,
-        size: 24,
-        color: AppColors.purple.withValues(alpha: 0.5),
+      child: Center(
+        child: Icon(
+          isKart ? LucideIcons.gauge : LucideIcons.car,
+          size: 28,
+          color: AppColors.purple.withValues(alpha: 0.5),
+        ),
       ),
     );
   }

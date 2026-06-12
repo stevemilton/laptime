@@ -63,16 +63,31 @@ class ImageUploadService {
   }) async {
     final file = File(localPath);
     if (!file.existsSync()) {
+      debugPrint(
+        'ImageUploadService: file NOT found on disk: $localPath',
+      );
       throw FileSystemException('Image file not found', localPath);
     }
 
     final bytes = await file.readAsBytes();
+    debugPrint(
+      'ImageUploadService: uploading ${bytes.length} bytes '
+      'to $bucket/$storagePath ...',
+    );
 
-    await _supabase.storage.from(bucket).uploadBinary(
-          storagePath,
-          bytes,
-          fileOptions: const FileOptions(upsert: true),
-        );
+    try {
+      await _supabase.storage.from(bucket).uploadBinary(
+            storagePath,
+            bytes,
+            fileOptions: const FileOptions(upsert: true),
+          );
+    } catch (e) {
+      debugPrint(
+        'ImageUploadService: uploadBinary FAILED '
+        'bucket=$bucket path=$storagePath error=$e',
+      );
+      rethrow;
+    }
 
     final publicUrl =
         _supabase.storage.from(bucket).getPublicUrl(storagePath);

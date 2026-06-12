@@ -1,6 +1,7 @@
 abstract final class RouteNames {
   // Auth
   static const login = 'login';
+  static const verifyEmail = 'verifyEmail';
   static const disclaimer = 'disclaimer';
 
   // Main tabs
@@ -12,6 +13,7 @@ abstract final class RouteNames {
   // Sub-screens
   static const recording = 'recording';
   static const sessions = 'sessions';
+  static const sessionSummary = 'sessionSummary';
   static const sessionEdit = 'sessionEdit';
   static const sessionDetail = 'sessionDetail';
   static const lapDetail = 'lapDetail';

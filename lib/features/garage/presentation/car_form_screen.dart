@@ -175,11 +175,11 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
             ),
             const SizedBox(height: 16),
 
-            // Make
+            // Make (required)
             TextFormField(
               controller: _makeController,
               decoration: InputDecoration(
-                labelText: _isKart ? 'Chassis Make' : 'Make',
+                labelText: _isKart ? 'Chassis Make *' : 'Make *',
                 hintText: _isKart ? 'e.g. Tony Kart, CRG' : 'e.g. Porsche',
                 prefixIcon: Icon(
                   _isKart ? LucideIcons.gauge : LucideIcons.car,
@@ -193,11 +193,11 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
             ),
             const SizedBox(height: 16),
 
-            // Model
+            // Model (required)
             TextFormField(
               controller: _modelController,
               decoration: InputDecoration(
-                labelText: _isKart ? 'Chassis Model' : 'Model',
+                labelText: _isKart ? 'Chassis Model *' : 'Model *',
                 hintText: _isKart ? 'e.g. Racer 401 RR' : 'e.g. 911 GT3',
                 prefixIcon: const Icon(LucideIcons.tag, size: 18),
               ),
@@ -607,7 +607,15 @@ class _CarFormScreenState extends ConsumerState<CarFormScreen> {
 
   Future<void> _save() async {
     final isValid = _formKey.currentState?.validate() ?? false;
-    if (!isValid) return;
+    if (!isValid) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please fill in all required fields.'),
+          backgroundColor: AppColors.red,
+        ),
+      );
+      return;
+    }
 
     setState(() => _isLoading = true);
 

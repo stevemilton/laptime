@@ -8,10 +8,12 @@ import '../../features/feed/presentation/feed_screen.dart';
 import '../../features/sectors/presentation/sectors_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../../features/auth/presentation/login_screen.dart';
+import '../../features/auth/presentation/verify_email_screen.dart';
 import '../../features/disclaimer/presentation/disclaimer_screen.dart';
 import '../../features/recording/presentation/recording_screen.dart';
 import '../../features/session/presentation/session_detail_screen.dart';
 import '../../features/session/presentation/session_edit_screen.dart';
+import '../../features/session/presentation/session_summary_screen.dart';
 import '../../features/session/presentation/sessions_list_screen.dart';
 import '../../features/session/presentation/lap_detail_screen.dart';
 import '../../features/profile/presentation/edit_profile_screen.dart';
@@ -91,11 +93,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       final isAuthenticated = authState.valueOrNull?.session != null;
       final path = state.uri.path;
       final onLogin = path == '/login';
+      final onVerifyEmail = path == '/verify-email';
       final onDisclaimer = path == '/disclaimer';
 
-      // Not authenticated -> login
+      // Not authenticated -> login (but allow verify-email screen)
       if (!isAuthenticated) {
-        return onLogin ? null : '/login';
+        return (onLogin || onVerifyEmail) ? null : '/login';
       }
 
       // Disclaimer state still loading: no redirect (avoids flashing the
@@ -106,8 +109,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       if (disclaimerState.isLoading) return null;
       final hasAccepted = disclaimerState.valueOrNull ?? false;
 
-      // Authenticated but on login -> redirect away
-      if (onLogin) {
+      // Authenticated but on login or verify-email -> redirect away
+      if (onLogin || onVerifyEmail) {
         return hasAccepted ? '/record' : '/disclaimer';
       }
 
@@ -130,6 +133,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/login',
         name: RouteNames.login,
         builder: (context, state) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: '/verify-email',
+        name: RouteNames.verifyEmail,
+        builder: (context, state) {
+          final email = state.uri.queryParameters['email'] ?? '';
+          return VerifyEmailScreen(email: email);
+        },
       ),
       GoRoute(
         path: '/disclaimer',
@@ -158,6 +169,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           final id = state.pathParameters['id']!;
           return SessionDetailScreen(sessionId: id);
+        },
+      ),
+
+      // Session summary (post-recording, full-screen)
+      GoRoute(
+        path: '/session/:id/summary',
+        name: RouteNames.sessionSummary,
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          return SessionSummaryScreen(sessionId: id);
         },
       ),
 
@@ -248,6 +269,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const SettingsScreen(),
       ),
 
+
       // Legal screens (full-screen)
       GoRoute(
         path: '/privacy-policy',
@@ -261,7 +283,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/terms',
         name: RouteNames.terms,
         builder: (context, state) => const LegalScreen(
-          title: 'Terms of Service',
+          title: 'Terms and Conditions',
           assetPath: 'assets/legal/terms.md',
         ),
       ),

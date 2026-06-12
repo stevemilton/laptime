@@ -19,6 +19,19 @@ import '../../social/data/team_providers.dart';
 import 'comment_sheet.dart';
 import 'sector_sheet.dart';
 
+/// Feed provider for the "My Laps" tab, one instance per page index.
+final mySessionsFeedProvider =
+    FutureProvider.family<List<FeedItem>, int>((ref, page) async {
+  final user = ref.watch(currentUserProvider);
+  if (user == null) return [];
+  final repo = ref.read(feedRepositoryProvider);
+  return repo.getMySessions(
+    userId: user.id,
+    limit: feedPageSize,
+    offset: page * feedPageSize,
+  );
+});
+
 /// Feed provider for the "Following" tab, one instance per page index.
 final followingFeedProvider =
     FutureProvider.family<List<FeedItem>, int>((ref, page) async {
@@ -57,7 +70,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
   }
 
   @override
@@ -97,6 +110,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
             indicatorColor: AppColors.purple,
             indicatorSize: TabBarIndicatorSize.label,
             tabs: const [
+              Tab(text: 'My Laps'),
               Tab(text: 'Following'),
               Tab(text: 'Nearby'),
               Tab(text: 'Teams'),
@@ -108,6 +122,13 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
             child: TabBarView(
               controller: _tabController,
               children: [
+                _FeedList(
+                  feedProvider: mySessionsFeedProvider,
+                  emptyIcon: LucideIcons.timer,
+                  emptyTitle: 'No sessions yet',
+                  emptySubtitle:
+                      'Record your first track session to see it here.',
+                ),
                 _FeedList(feedProvider: followingFeedProvider),
                 _FeedList(feedProvider: nearbyFeedProvider),
                 const _TeamsFeedTab(),
@@ -125,12 +146,14 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
 class _FeedList extends ConsumerStatefulWidget {
   const _FeedList({
     required this.feedProvider,
+    this.emptyIcon = LucideIcons.rss,
     this.emptyTitle = 'No sessions yet',
     this.emptySubtitle =
         'Record a session or follow other drivers to build your feed.',
   });
 
   final FutureProviderFamily<List<FeedItem>, int> feedProvider;
+  final IconData emptyIcon;
   final String emptyTitle;
   final String emptySubtitle;
 
@@ -195,7 +218,7 @@ class _FeedListState extends ConsumerState<_FeedList> {
           children: [
             const SizedBox(height: 80),
             EmptyState(
-              icon: LucideIcons.rss,
+              icon: widget.emptyIcon,
               title: widget.emptyTitle,
               subtitle: widget.emptySubtitle,
             ),
@@ -419,8 +442,9 @@ class _LikePillState extends ConsumerState<_LikePill> {
     try {
       final repo = LikeRepository(ref.read(databaseProvider));
       await repo.toggleLike(widget.item.sessionId, user.id);
-      // No feed invalidation: the pill already updated optimistically and
-      // a refetch would race the sync queue (and reset pagination).
+      // No feed invalidation: the pill already updated optimistically (the
+      // override provider keeps it across recycling) and a refetch would
+      // race the sync queue and reset pagination.
     } catch (_) {
       // Revert on error
       if (mounted) {
@@ -501,11 +525,50 @@ class _TeamsFeedTab extends ConsumerWidget {
           );
         }
 
-        // Has teams — show their paginated feed
-        return _FeedList(
-          feedProvider: teamsFeedProvider,
-          emptyTitle: 'No team sessions yet',
-          emptySubtitle: 'Sessions from your teammates will appear here.',
+        // Has teams — paginated feed with a manage link pinned above it.
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+              child: GestureDetector(
+                onTap: () => context.push('/teams'),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: AppColors.purplePale,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(LucideIcons.users,
+                          size: 18, color: AppColors.purple),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Manage Teams & Invite Members',
+                          style: AppTypography.bodySmall.copyWith(
+                            color: AppColors.purple,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const Icon(LucideIcons.chevronRight,
+                          size: 16, color: AppColors.purple),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Expanded(
+              child: _FeedList(
+                feedProvider: teamsFeedProvider,
+                emptyTitle: 'No team sessions yet',
+                emptySubtitle:
+                    'Sessions from your teammates will appear here.',
+              ),
+            ),
+          ],
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),

@@ -1,12 +1,19 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_cropper/image_cropper.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/providers/supabase_provider.dart';
+import '../../../core/providers/sync_provider.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/app_avatar.dart';
 import '../../../core/widgets/app_pill.dart';
@@ -119,9 +126,35 @@ class _TeamDetailScreenState extends ConsumerState<TeamDetailScreen> {
   Widget _buildHeader(TeamInfo team) {
     return Column(
       children: [
-        AppAvatar.large(
-          imageUrl: team.logoUrl,
-          initials: team.name.isNotEmpty ? team.name[0].toUpperCase() : null,
+        GestureDetector(
+          onTap: _isAdmin ? () => _pickTeamPhoto(team) : null,
+          child: Stack(
+            children: [
+              AppAvatar.large(
+                imageUrl: team.logoUrl,
+                initials:
+                    team.name.isNotEmpty ? team.name[0].toUpperCase() : null,
+              ),
+              if (_isAdmin)
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    width: 28,
+                    height: 28,
+                    decoration: const BoxDecoration(
+                      color: AppColors.purple,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      LucideIcons.camera,
+                      size: 14,
+                      color: AppColors.white,
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
         const SizedBox(height: 12),
         Row(
@@ -580,6 +613,141 @@ class _TeamDetailScreenState extends ConsumerState<TeamDetailScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Could not leave team. Please try again.'), backgroundColor: AppColors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _pickTeamPhoto(TeamInfo team) async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 36,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: AppColors.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              ListTile(
+                leading:
+                    const Icon(LucideIcons.camera, color: AppColors.purple),
+                title: const Text('Take Photo'),
+                onTap: () => Navigator.pop(ctx, ImageSource.camera),
+              ),
+              ListTile(
+                leading:
+                    const Icon(LucideIcons.image, color: AppColors.purple),
+                title: const Text('Choose from Gallery'),
+                onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+              ),
+              if (team.logoUrl != null) ...[
+                const Divider(),
+                ListTile(
+                  leading:
+                      const Icon(LucideIcons.trash2, color: AppColors.red),
+                  title: const Text('Remove Photo',
+                      style: TextStyle(color: AppColors.red)),
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    try {
+                      final repo = ref.read(teamRepositoryProvider);
+                      await repo.updateTeam(
+                        teamId: widget.teamId,
+                        logoUrl: '',
+                      );
+                      ref.read(syncServiceProvider).requestSync();
+                      _invalidateAll();
+                    } catch (e) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                              content: Text('$e'),
+                              backgroundColor: AppColors.red),
+                        );
+                      }
+                    }
+                  },
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (source == null) return;
+
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: source,
+        maxWidth: 800,
+        maxHeight: 800,
+        imageQuality: 85,
+      );
+
+      if (picked == null || !mounted) return;
+
+      // Crop to square for team logo
+      final cropped = await ImageCropper().cropImage(
+        sourcePath: picked.path,
+        aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+        uiSettings: [
+          IOSUiSettings(
+            title: 'Crop Team Photo',
+            aspectRatioLockEnabled: true,
+            resetAspectRatioEnabled: false,
+            aspectRatioPickerButtonHidden: true,
+          ),
+        ],
+      );
+
+      if (cropped == null || !mounted) return;
+
+      // Save to app documents
+      final appDir = await getApplicationDocumentsDirectory();
+      final teamImagesDir =
+          Directory(p.join(appDir.path, 'team_images'));
+      if (!await teamImagesDir.exists()) {
+        await teamImagesDir.create(recursive: true);
+      }
+      final ext = p.extension(cropped.path);
+      final fileName =
+          'team_${widget.teamId}_${DateTime.now().millisecondsSinceEpoch}$ext';
+      final savedPath = p.join(teamImagesDir.path, fileName);
+      await File(cropped.path).copy(savedPath);
+
+      // Update team with local path — sync engine will upload to Storage
+      final repo = ref.read(teamRepositoryProvider);
+      await repo.updateTeam(
+        teamId: widget.teamId,
+        logoUrl: savedPath,
+      );
+
+      // Trigger sync so image uploads immediately
+      ref.read(syncServiceProvider).requestSync();
+      _invalidateAll();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Team photo updated')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not update photo: $e'),
+            backgroundColor: AppColors.red,
+          ),
         );
       }
     }
