@@ -115,7 +115,7 @@ class _TeamDetailScreenState extends ConsumerState<TeamDetailScreen> {
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (_, __) => const EmptyState(
+        error: (_, _) => const EmptyState(
           icon: LucideIcons.alertCircle,
           title: 'Something went wrong',
           subtitle: 'Could not load team details. Pull to refresh.',
@@ -371,7 +371,7 @@ class _TeamDetailScreenState extends ConsumerState<TeamDetailScreen> {
           },
           loading: () =>
               const Center(child: CircularProgressIndicator()),
-          error: (_, __) => Text(
+          error: (_, _) => Text(
             'Could not load crews.',
             style: AppTypography.bodyMedium.copyWith(
               color: AppColors.textTertiary,
@@ -408,7 +408,7 @@ class _TeamDetailScreenState extends ConsumerState<TeamDetailScreen> {
           },
           loading: () =>
               const Center(child: CircularProgressIndicator()),
-          error: (_, __) => Text(
+          error: (_, _) => Text(
             'Could not load members.',
             style: AppTypography.bodyMedium.copyWith(
               color: AppColors.textTertiary,

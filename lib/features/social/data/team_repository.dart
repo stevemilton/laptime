@@ -393,7 +393,7 @@ class TeamRepository {
         'name': name,
         'code': code,
         'created_by': createdBy,
-        if (location != null) 'location': location,
+        'location': ?location,
       }),
     );
 
@@ -877,7 +877,7 @@ class TeamRepository {
         'team_id': teamId,
         'user_id': userId,
         'status': JoinRequestStatus.pending,
-        if (message != null) 'message': message,
+        'message': ?message,
       }),
     );
   }

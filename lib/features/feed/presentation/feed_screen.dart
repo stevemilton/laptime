@@ -572,7 +572,7 @@ class _TeamsFeedTab extends ConsumerWidget {
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (_, __) => const EmptyState(
+      error: (_, _) => const EmptyState(
         icon: LucideIcons.alertCircle,
         title: 'Something went wrong',
         subtitle: 'Could not load teams. Pull to refresh.',

@@ -421,8 +421,7 @@ class SectorRepository {
     if (sectors.isEmpty) return;
 
     final gates = [
-      for (final sector in sectors)
-        if (_gatesFor(sector) case final g?) g,
+      for (final sector in sectors) ?_gatesFor(sector),
     ];
 
     final laps = await _db.getSessionLaps(sessionId);
