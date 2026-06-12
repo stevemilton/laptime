@@ -1,8 +1,14 @@
 -- V2 Schema Alignment & RLS Fixes
 --
 -- Fixes the systemic drift between the client's sync payloads and the remote
--- schema, repairs broken/recursive RLS policies, adds missing indexes, and
--- introduces server-side account deletion.
+-- schema, hardens the RLS policy set, adds missing indexes, and introduces
+-- server-side account deletion.
+--
+-- NOTE: the live database's policies had drifted from the committed
+-- migration files (per-command policies were created via the SQL editor).
+-- This migration reconciles against the LIVE state: it drops both the
+-- repo-file policy names and the live policy names before recreating, so
+-- it is idempotent and safe regardless of which state a database is in.
 --
 -- Findings reference: docs/V2_CODE_REVIEW.md (D1-D13, T1/T2/T5, S6, A1).
 
@@ -105,9 +111,10 @@ ALTER TABLE public.teams
 -- 3. RLS fixes
 -- ════════════════════════════════════════════════════════════════════
 
--- T1/T2: the team-admin policies are circular (team creation) and
--- self-recursive (every team_members query errors with 42P17).
--- SECURITY DEFINER helpers bypass RLS inside the policy check.
+-- T1/T2: policies that check team membership/adminship by subquerying
+-- team_members are fragile on team_members itself (self-reference only
+-- avoids infinite recursion while team_members' SELECT policy stays
+-- `USING (true)`). SECURITY DEFINER helpers bypass RLS inside the check.
 CREATE OR REPLACE FUNCTION public.is_team_admin(check_team_id UUID)
 RETURNS BOOLEAN
 LANGUAGE sql SECURITY DEFINER STABLE
@@ -136,8 +143,11 @@ $$;
 REVOKE EXECUTE ON FUNCTION public.is_team_admin(UUID) FROM anon;
 REVOKE EXECUTE ON FUNCTION public.is_team_member(UUID) FROM anon;
 
--- Teams: creators can insert; admins can update/delete.
+-- Teams: creators insert their own teams; admins update/delete.
 DROP POLICY IF EXISTS teams_admin ON public.teams;
+DROP POLICY IF EXISTS teams_insert ON public.teams;
+DROP POLICY IF EXISTS teams_update ON public.teams;
+DROP POLICY IF EXISTS teams_delete ON public.teams;
 CREATE POLICY teams_insert ON public.teams
   FOR INSERT WITH CHECK (auth.uid() = created_by);
 CREATE POLICY teams_update ON public.teams
@@ -145,26 +155,50 @@ CREATE POLICY teams_update ON public.teams
 CREATE POLICY teams_delete ON public.teams
   FOR DELETE USING (public.is_team_admin(id));
 
--- Team members: replace the recursive admin policy.
+-- Team members: self can join/leave; admins manage all (this matches the
+-- live semantics — the approve flow has an admin insert the requester's
+-- membership row).
 DROP POLICY IF EXISTS team_members_admin ON public.team_members;
-CREATE POLICY team_members_admin_update ON public.team_members
+DROP POLICY IF EXISTS team_members_insert ON public.team_members;
+DROP POLICY IF EXISTS team_members_update ON public.team_members;
+DROP POLICY IF EXISTS team_members_delete ON public.team_members;
+CREATE POLICY team_members_insert ON public.team_members
+  FOR INSERT WITH CHECK (
+    auth.uid() = user_id OR public.is_team_admin(team_id)
+  );
+CREATE POLICY team_members_update ON public.team_members
   FOR UPDATE USING (public.is_team_admin(team_id));
-CREATE POLICY team_members_admin_delete ON public.team_members
-  FOR DELETE USING (public.is_team_admin(team_id));
+CREATE POLICY team_members_delete ON public.team_members
+  FOR DELETE USING (
+    auth.uid() = user_id OR public.is_team_admin(team_id)
+  );
 
--- Crews: rewrite via helper functions (the old policies join through
--- team_members and would hit the recursive policy).
+-- Crews: members read, admins manage.
 DROP POLICY IF EXISTS crews_read ON public.crews;
 DROP POLICY IF EXISTS crews_admin ON public.crews;
-CREATE POLICY crews_read ON public.crews
+DROP POLICY IF EXISTS crews_select ON public.crews;
+DROP POLICY IF EXISTS crews_insert ON public.crews;
+DROP POLICY IF EXISTS crews_update ON public.crews;
+DROP POLICY IF EXISTS crews_delete ON public.crews;
+CREATE POLICY crews_select ON public.crews
   FOR SELECT USING (public.is_team_member(team_id));
-CREATE POLICY crews_admin ON public.crews
-  FOR ALL USING (public.is_team_admin(team_id))
-  WITH CHECK (public.is_team_admin(team_id));
+CREATE POLICY crews_insert ON public.crews
+  FOR INSERT WITH CHECK (public.is_team_admin(team_id));
+CREATE POLICY crews_update ON public.crews
+  FOR UPDATE USING (public.is_team_admin(team_id));
+CREATE POLICY crews_delete ON public.crews
+  FOR DELETE USING (public.is_team_admin(team_id));
 
--- T5: admins must be able to remove other members' crew memberships.
+-- Crew members: self can join/leave; T5 — team admins must also be able
+-- to remove other members' crew memberships.
 DROP POLICY IF EXISTS crew_members_read ON public.crew_members;
-CREATE POLICY crew_members_read ON public.crew_members
+DROP POLICY IF EXISTS crew_members_admin ON public.crew_members;
+DROP POLICY IF EXISTS crew_members_self ON public.crew_members;
+DROP POLICY IF EXISTS crew_members_select ON public.crew_members;
+DROP POLICY IF EXISTS crew_members_insert ON public.crew_members;
+DROP POLICY IF EXISTS crew_members_update ON public.crew_members;
+DROP POLICY IF EXISTS crew_members_delete ON public.crew_members;
+CREATE POLICY crew_members_select ON public.crew_members
   FOR SELECT USING (
     EXISTS (
       SELECT 1 FROM public.crews c
@@ -172,43 +206,78 @@ CREATE POLICY crew_members_read ON public.crew_members
         AND public.is_team_member(c.team_id)
     )
   );
-CREATE POLICY crew_members_admin ON public.crew_members
-  FOR ALL USING (
-    EXISTS (
+CREATE POLICY crew_members_insert ON public.crew_members
+  FOR INSERT WITH CHECK (
+    auth.uid() = user_id OR EXISTS (
+      SELECT 1 FROM public.crews c
+      WHERE c.id = crew_members.crew_id
+        AND public.is_team_admin(c.team_id)
+    )
+  );
+CREATE POLICY crew_members_update ON public.crew_members
+  FOR UPDATE USING (
+    auth.uid() = user_id OR EXISTS (
+      SELECT 1 FROM public.crews c
+      WHERE c.id = crew_members.crew_id
+        AND public.is_team_admin(c.team_id)
+    )
+  );
+CREATE POLICY crew_members_delete ON public.crew_members
+  FOR DELETE USING (
+    auth.uid() = user_id OR EXISTS (
       SELECT 1 FROM public.crews c
       WHERE c.id = crew_members.crew_id
         AND public.is_team_admin(c.team_id)
     )
   );
 
--- Join-request admin policies also referenced team_members directly.
+-- Join requests: requesters manage their own; team admins review.
+DROP POLICY IF EXISTS join_requests_own ON public.team_join_requests;
 DROP POLICY IF EXISTS join_requests_admin ON public.team_join_requests;
 DROP POLICY IF EXISTS join_requests_admin_update ON public.team_join_requests;
-CREATE POLICY join_requests_admin ON public.team_join_requests
-  FOR SELECT USING (public.is_team_admin(team_id));
-CREATE POLICY join_requests_admin_update ON public.team_join_requests
-  FOR UPDATE USING (public.is_team_admin(team_id));
+DROP POLICY IF EXISTS join_requests_select ON public.team_join_requests;
+DROP POLICY IF EXISTS join_requests_insert ON public.team_join_requests;
+DROP POLICY IF EXISTS join_requests_update ON public.team_join_requests;
+DROP POLICY IF EXISTS join_requests_delete ON public.team_join_requests;
+CREATE POLICY join_requests_select ON public.team_join_requests
+  FOR SELECT USING (
+    auth.uid() = user_id OR public.is_team_admin(team_id)
+  );
+CREATE POLICY join_requests_insert ON public.team_join_requests
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY join_requests_update ON public.team_join_requests
+  FOR UPDATE USING (
+    auth.uid() = user_id OR public.is_team_admin(team_id)
+  );
+CREATE POLICY join_requests_delete ON public.team_join_requests
+  FOR DELETE USING (auth.uid() = user_id);
 
 -- Car make/model/class are shown on the public feed and sector
 -- leaderboards; the owner-only policy made every embed return null.
+DROP POLICY IF EXISTS cars_public_read ON public.cars;
 CREATE POLICY cars_public_read ON public.cars FOR SELECT USING (true);
 
 -- L2: allow the client's profile upsert path.
+DROP POLICY IF EXISTS profiles_insert ON public.profiles;
 CREATE POLICY profiles_insert ON public.profiles
   FOR INSERT WITH CHECK (auth.uid() = id);
 DROP POLICY IF EXISTS profiles_update ON public.profiles;
 CREATE POLICY profiles_update ON public.profiles
   FOR UPDATE USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
 
--- H4/S6: sector owners can update/delete their sectors.
+-- H4/S6: sector owners can update their sectors (delete already exists).
+DROP POLICY IF EXISTS sectors_update ON public.sectors;
 CREATE POLICY sectors_update ON public.sectors
   FOR UPDATE USING (auth.uid() = created_by);
+DROP POLICY IF EXISTS sectors_delete ON public.sectors;
 CREATE POLICY sectors_delete ON public.sectors
   FOR DELETE USING (auth.uid() = created_by);
 
 -- Authenticated users can create circuits from the app.
+DROP POLICY IF EXISTS circuits_insert ON public.circuits;
 CREATE POLICY circuits_insert ON public.circuits
   FOR INSERT WITH CHECK (auth.uid() IS NOT NULL AND auth.uid() = created_by);
+DROP POLICY IF EXISTS circuits_update ON public.circuits;
 CREATE POLICY circuits_update ON public.circuits
   FOR UPDATE USING (auth.uid() = created_by);
 
