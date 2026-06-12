@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -661,7 +662,7 @@ class _TeamDetailScreenState extends ConsumerState<TeamDetailScreen> {
                       final repo = ref.read(teamRepositoryProvider);
                       await repo.updateTeam(
                         teamId: widget.teamId,
-                        logoUrl: '',
+                        logoUrl: const Value(null),
                       );
                       ref.read(syncServiceProvider).requestSync();
                       _invalidateAll();
@@ -729,7 +730,7 @@ class _TeamDetailScreenState extends ConsumerState<TeamDetailScreen> {
       final repo = ref.read(teamRepositoryProvider);
       await repo.updateTeam(
         teamId: widget.teamId,
-        logoUrl: savedPath,
+        logoUrl: Value(savedPath),
       );
 
       // Trigger sync so image uploads immediately

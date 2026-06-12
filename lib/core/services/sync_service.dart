@@ -224,7 +224,11 @@ class SyncService {
         var processedAny = false;
         for (final item in items.skip(offset)) {
           if (_disposed) break;
-          final isParent = _parentTables.contains(item.targetTable);
+          // Image-pending items have already upserted their row — children
+          // can't hit FK violations behind them, so they never halt the
+          // pass even on parent tables.
+          final isParent = _parentTables.contains(item.targetTable) &&
+              !_isImagePending(item);
           if (!_isEligibleForRetry(item)) {
             if (isParent) {
               halted = true;
@@ -284,6 +288,16 @@ class SyncService {
         );
       }
     }
+  }
+
+  /// Marker prefix for items whose row synced but whose image upload is
+  /// still pending retry.
+  static const _imagePendingMarker = 'Image upload pending for: ';
+
+  /// Whether this item's only outstanding work is an image upload (its row
+  /// already exists remotely).
+  bool _isImagePending(LocalSyncQueueData item) {
+    return item.errorMessage?.startsWith(_imagePendingMarker) ?? false;
   }
 
   /// Determine whether a queue item should be attempted right now.
@@ -355,16 +369,18 @@ class SyncService {
 
         if (failedImageFields.isNotEmpty) {
           // Row data synced, but one or more images couldn't upload.
-          // Keep the item in the queue so the image upload is retried.
-          // Returns SUCCESS to the queue loop: the row exists remotely, so
-          // children must not be halted behind a pending image.
+          // Keep the item in the queue (with backoff) so the image upload
+          // is retried. Returns SUCCESS to the queue loop, and the marker
+          // error message makes _isImagePending treat the item as a leaf
+          // on later passes — the row exists remotely, so children must
+          // never be halted behind a pending image.
           debugPrint(
             'SyncService: data synced for ${item.targetTable}/${item.recordId} '
             'but image upload failed for $failedImageFields — will retry',
           );
           await _db.markSyncFailed(
             item.id,
-            'Image upload pending for: $failedImageFields',
+            '$_imagePendingMarker$failedImageFields',
           );
           return null;
         }
