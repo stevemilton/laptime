@@ -20,7 +20,9 @@ final isAuthenticatedProvider = Provider<bool>((ref) {
   final authState = ref.watch(authStateProvider);
   return authState.when(
     data: (state) => state.session != null,
-    loading: () => false,
+    // While the stream is loading, check the synchronous persisted session
+    // so returning users aren't briefly flashed to the login screen.
+    loading: () => Supabase.instance.client.auth.currentSession != null,
     error: (_, _) => false,
   );
 });
@@ -92,15 +94,17 @@ class AuthController extends StateNotifier<AsyncValue<void>> {
 
   /// Sign up with email/password.
   ///
-  /// Returns true when email confirmation is required: Supabase created
-  /// the user and sent a confirmation email, but no session exists yet.
-  Future<bool> signUpWithEmail({
+  /// Returns the email address when verification is required (Supabase
+  /// created the user and sent a confirmation email, but no session exists
+  /// yet — the caller shows the verify-email screen), or null when a
+  /// session was created immediately.
+  Future<String?> signUpWithEmail({
     required String email,
     required String password,
     String? displayName,
   }) async {
     state = const AsyncLoading();
-    var confirmationRequired = false;
+    String? pendingEmail;
     state = await AsyncValue.guard(() async {
       final AuthResponse response = await _repo.signUpWithEmail(
         email: email,
@@ -112,12 +116,12 @@ class AuthController extends StateNotifier<AsyncValue<void>> {
       }
       if (response.session == null) {
         // Email confirmation is enabled - no session until confirmed.
-        confirmationRequired = true;
+        pendingEmail = email;
         return;
       }
       await _ensureLocalProfile();
     });
-    return confirmationRequired && !state.hasError;
+    return state.hasError ? null : pendingEmail;
   }
 
   /// Send password reset email.

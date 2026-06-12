@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/app_colors.dart';
@@ -18,7 +19,6 @@ class LoginScreen extends ConsumerStatefulWidget {
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _showEmailForm = false;
   bool _isSignUp = false;
-  String? _confirmationSentTo;
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _nameController = TextEditingController();
@@ -172,7 +172,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               onTap: () => setState(() {
                 _showEmailForm = false;
                 _isSignUp = false;
-                _confirmationSentTo = null;
               }),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -192,34 +191,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             ),
           ),
           const SizedBox(height: 16),
-
-          // Confirmation email notice (after sign-up with confirmation on)
-          if (_confirmationSentTo != null) ...[
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.purplePale,
-                borderRadius: BorderRadius.circular(AppRadii.md),
-              ),
-              child: Row(
-                children: [
-                  const Icon(LucideIcons.mail,
-                      size: 18, color: AppColors.purple),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Confirmation email sent to $_confirmationSentTo. '
-                      'Confirm your address, then sign in.',
-                      style: AppTypography.bodySmall.copyWith(
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-          ],
 
           // Name field (sign up only)
           if (_isSignUp) ...[
@@ -306,7 +277,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             child: GestureDetector(
               onTap: () => setState(() {
                 _isSignUp = !_isSignUp;
-                if (_isSignUp) _confirmationSentTo = null;
               }),
               child: Text(
                 _isSignUp
@@ -329,22 +299,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     final controller = ref.read(authControllerProvider.notifier);
     if (_isSignUp) {
-      final email = _emailController.text.trim();
-      final confirmationRequired = await controller.signUpWithEmail(
-        email: email,
+      final pendingEmail = await controller.signUpWithEmail(
+        email: _emailController.text.trim(),
         password: _passwordController.text,
         displayName: _nameController.text.trim().isEmpty
             ? null
             : _nameController.text.trim(),
       );
-      if (confirmationRequired && mounted) {
-        // No session yet - tell the user to check their inbox instead of
-        // silently doing nothing.
-        setState(() {
-          _isSignUp = false;
-          _confirmationSentTo = email;
-          _passwordController.clear();
-        });
+      // If email confirmation is required, navigate to the OTP screen.
+      if (pendingEmail != null && mounted) {
+        context.go('/verify-email?email=${Uri.encodeComponent(pendingEmail)}');
       }
     } else {
       await controller.signInWithEmail(

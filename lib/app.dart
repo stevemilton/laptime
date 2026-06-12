@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/theme/app_theme.dart';
 import 'core/router/app_router.dart';
 import 'core/providers/sync_provider.dart';
+import 'core/services/watch_bridge_service.dart';
 import 'features/profile/data/profile_providers.dart';
 import 'features/profile/data/ensure_local_profile.dart';
 
@@ -13,16 +14,15 @@ class LapTimeApp extends ConsumerStatefulWidget {
   ConsumerState<LapTimeApp> createState() => _LapTimeAppState();
 }
 
-class _LapTimeAppState extends ConsumerState<LapTimeApp> {
-  SyncLifecycleObserver? _syncObserver;
-
+class _LapTimeAppState extends ConsumerState<LapTimeApp>
+    with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    // Register sync lifecycle observer after first frame
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _syncObserver = SyncLifecycleObserver(ref.read(syncServiceProvider));
-      WidgetsBinding.instance.addObserver(_syncObserver!);
+      // Initialize Apple Watch bridge (listens for incoming session files)
+      ref.read(watchBridgeProvider);
 
       // Ensure local profile exists on cold start with restored session.
       // This is critical: when the app restarts, Supabase restores the session
@@ -31,6 +31,14 @@ class _LapTimeAppState extends ConsumerState<LapTimeApp> {
       // operations silently affect 0 rows.
       _ensureProfileOnStartup();
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      ref.read(syncServiceProvider).onAppResumed();
+      ref.read(watchBridgeProvider).refreshConfig();
+    }
   }
 
   /// If a Supabase session already exists (restored from storage),
@@ -42,9 +50,7 @@ class _LapTimeAppState extends ConsumerState<LapTimeApp> {
 
   @override
   void dispose() {
-    if (_syncObserver != null) {
-      WidgetsBinding.instance.removeObserver(_syncObserver!);
-    }
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 

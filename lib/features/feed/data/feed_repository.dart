@@ -110,6 +110,47 @@ class FeedRepository {
 
   String get _currentUserId => _client.auth.currentUser?.id ?? '';
 
+  /// Fetch the current user's own sessions (public and private).
+  Future<List<FeedItem>> getMySessions({
+    required String userId,
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    try {
+      List response;
+      try {
+        response = await _client
+            .from('sessions')
+            .select(_fullSelect)
+            .eq('user_id', userId)
+            .order('started_at', ascending: false)
+            .range(offset, offset + limit - 1);
+        debugPrint('[Feed] My Sessions full query OK: ${response.length} items');
+      } catch (e) {
+        debugPrint(
+            '[Feed] My Sessions full query failed ($e), using base query');
+        response = await _client
+            .from('sessions')
+            .select(_baseSelect)
+            .eq('user_id', userId)
+            .order('started_at', ascending: false)
+            .range(offset, offset + limit - 1);
+        debugPrint('[Feed] My Sessions base query OK: ${response.length} items');
+      }
+
+      return response
+          .map((json) => FeedItem.fromJson(
+                json as Map<String, dynamic>,
+                currentUserId: _currentUserId,
+              ))
+          .toList();
+    } catch (e, stack) {
+      debugPrint('[Feed] getMySessions ERROR: $e');
+      debugPrint('[Feed] STACK: $stack');
+      return [];
+    }
+  }
+
   /// Fetch the "Following" feed - public sessions from users you follow.
   Future<List<FeedItem>> getFollowingFeed({
     required String userId,
