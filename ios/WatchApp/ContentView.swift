@@ -68,9 +68,9 @@ struct ContentView: View {
 
     private var recordingView: some View {
         VStack(spacing: 8) {
-            // Elapsed time
-            Text(formatTime(recording.elapsedMs))
-                .font(.system(size: 36, weight: .bold, design: .monospaced))
+            // Elapsed time (hundredths — readable while ticking)
+            Text(formatElapsed(recording.elapsedMs))
+                .font(.system(size: 34, weight: .bold, design: .monospaced))
                 .foregroundColor(.white)
                 .minimumScaleFactor(0.6)
 
@@ -80,8 +80,8 @@ struct ContentView: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.secondary)
 
-                Text(formatTime(recording.currentLapMs))
-                    .font(.system(size: 20, weight: .semibold, design: .monospaced))
+                Text(formatElapsed(recording.currentLapMs))
+                    .font(.system(size: 18, weight: .semibold, design: .monospaced))
                     .foregroundColor(.yellow)
             }
 
@@ -169,11 +169,21 @@ struct ContentView: View {
 
     // MARK: - Formatting
 
+    /// Full precision format for lap times: M:SS.ttt
     private func formatTime(_ ms: Int) -> String {
         let totalSeconds = ms / 1000
         let minutes = totalSeconds / 60
         let seconds = totalSeconds % 60
-        let tenths = (ms % 1000) / 100
-        return String(format: "%d:%02d.%d", minutes, seconds, tenths)
+        let millis = ms % 1000
+        return String(format: "%d:%02d.%03d", minutes, seconds, millis)
+    }
+
+    /// Compact format for the main elapsed clock: M:SS.hh
+    private func formatElapsed(_ ms: Int) -> String {
+        let totalSeconds = ms / 1000
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
+        let hundredths = (ms % 1000) / 10
+        return String(format: "%d:%02d.%02d", minutes, seconds, hundredths)
     }
 }

@@ -19,7 +19,9 @@ final isAuthenticatedProvider = Provider<bool>((ref) {
   final authState = ref.watch(authStateProvider);
   return authState.when(
     data: (state) => state.session != null,
-    loading: () => false,
+    // While the stream is loading, check the synchronous persisted session
+    // so returning users aren't briefly flashed to the login screen.
+    loading: () => Supabase.instance.client.auth.currentSession != null,
     error: (_, _) => false,
   );
 });
@@ -93,20 +95,31 @@ class AuthController extends StateNotifier<AsyncValue<void>> {
   }
 
   /// Sign up with email/password.
-  Future<void> signUpWithEmail({
+  ///
+  /// Returns the email address if verification is needed (no session),
+  /// or null if a session was created immediately.
+  Future<String?> signUpWithEmail({
     required String email,
     required String password,
     String? displayName,
   }) async {
     state = const AsyncLoading();
+    String? pendingEmail;
     state = await AsyncValue.guard(() async {
-      await _repo.signUpWithEmail(
+      final response = await _repo.signUpWithEmail(
         email: email,
         password: password,
         displayName: displayName,
       );
+      // If Supabase requires email confirmation, signUp returns a user
+      // but no session. Signal the caller to show verification screen.
+      if (response.session == null && response.user != null) {
+        pendingEmail = email;
+        return;
+      }
       await _ensureLocalProfile();
     });
+    return pendingEmail;
   }
 
   /// Send password reset email.

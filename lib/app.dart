@@ -74,7 +74,9 @@ class _TestTrackAppState extends ConsumerState<TestTrackApp>
 
   @override
   Widget build(BuildContext context) {
-    final router = ref.watch(appRouterProvider);
+    // read (not watch) — the GoRouter handles its own refresh via
+    // refreshListenable; no need to rebuild the entire MaterialApp.
+    final router = ref.read(appRouterProvider);
 
     return MaterialApp.router(
       title: 'TestTrack',

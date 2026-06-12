@@ -36,5 +36,7 @@
 	</array>
 	<key>WKApplication</key>
 	<true/>
+	<key>WKCompanionAppBundleIdentifier</key>
+	<string>com.laptime.laptime</string>
 </dict>
 </plist>

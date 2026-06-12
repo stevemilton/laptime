@@ -1,0 +1,12 @@
+{
+  "/Users/stevemilton/Projects/laptime/ios/WatchApp/TestTrackWatchApp.swift" : {
+    "abi-baseline-json" : "/Users/stevemilton/Projects/laptime/ios/build/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/x86_64/WatchApp.abi.json",
+    "const-values" : "/Users/stevemilton/Projects/laptime/ios/build/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/x86_64/WatchApp-primary.swiftconstvalues",
+    "dependencies" : "/Users/stevemilton/Projects/laptime/ios/build/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/x86_64/WatchApp-primary.d",
+    "diagnostics" : "/Users/stevemilton/Projects/laptime/ios/build/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/x86_64/WatchApp-primary.dia",
+    "objc-header" : "/Users/stevemilton/Projects/laptime/ios/build/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/x86_64/WatchApp-Swift.h",
+    "swiftdoc" : "/Users/stevemilton/Projects/laptime/ios/build/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/x86_64/WatchApp.swiftdoc",
+    "swiftmodule" : "/Users/stevemilton/Projects/laptime/ios/build/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/x86_64/WatchApp.swiftmodule",
+    "swiftsourceinfo" : "/Users/stevemilton/Projects/laptime/ios/build/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/x86_64/WatchApp.swiftsourceinfo"
+  }
+}

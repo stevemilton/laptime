@@ -1,0 +1,46 @@
+{
+  "" : {
+    "const-values" : "/Users/stevemilton/Projects/laptime/ios/build/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/arm64/WatchApp-primary.swiftconstvalues",
+    "dependencies" : "/Users/stevemilton/Projects/laptime/ios/build/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/arm64/WatchApp-primary.d",
+    "diagnostics" : "/Users/stevemilton/Projects/laptime/ios/build/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/arm64/WatchApp-primary.dia",
+    "emit-module-dependencies" : "/Users/stevemilton/Projects/laptime/ios/build/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/arm64/WatchApp-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/stevemilton/Projects/laptime/ios/build/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/arm64/WatchApp-primary-emit-module.dia",
+    "pch" : "/Users/stevemilton/Projects/laptime/ios/build/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/arm64/WatchApp-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/stevemilton/Projects/laptime/ios/build/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/arm64/WatchApp-primary.swiftdeps"
+  },
+  "/Users/stevemilton/Projects/laptime/ios/WatchApp/ContentView.swift" : {
+    "index-unit-output-path" : "/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/arm64/ContentView.o",
+    "llvm-bc" : "/Users/stevemilton/Projects/laptime/ios/build/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/arm64/ContentView.bc",
+    "object" : "/Users/stevemilton/Projects/laptime/ios/build/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/arm64/ContentView.o"
+  },
+  "/Users/stevemilton/Projects/laptime/ios/WatchApp/LapDetector.swift" : {
+    "index-unit-output-path" : "/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/arm64/LapDetector.o",
+    "llvm-bc" : "/Users/stevemilton/Projects/laptime/ios/build/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/arm64/LapDetector.bc",
+    "object" : "/Users/stevemilton/Projects/laptime/ios/build/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/arm64/LapDetector.o"
+  },
+  "/Users/stevemilton/Projects/laptime/ios/WatchApp/RecordingManager.swift" : {
+    "index-unit-output-path" : "/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/arm64/RecordingManager.o",
+    "llvm-bc" : "/Users/stevemilton/Projects/laptime/ios/build/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/arm64/RecordingManager.bc",
+    "object" : "/Users/stevemilton/Projects/laptime/ios/build/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/arm64/RecordingManager.o"
+  },
+  "/Users/stevemilton/Projects/laptime/ios/WatchApp/SessionData.swift" : {
+    "index-unit-output-path" : "/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/arm64/SessionData.o",
+    "llvm-bc" : "/Users/stevemilton/Projects/laptime/ios/build/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/arm64/SessionData.bc",
+    "object" : "/Users/stevemilton/Projects/laptime/ios/build/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/arm64/SessionData.o"
+  },
+  "/Users/stevemilton/Projects/laptime/ios/WatchApp/TestTrackWatchApp.swift" : {
+    "index-unit-output-path" : "/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/arm64/TestTrackWatchApp.o",
+    "llvm-bc" : "/Users/stevemilton/Projects/laptime/ios/build/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/arm64/TestTrackWatchApp.bc",
+    "object" : "/Users/stevemilton/Projects/laptime/ios/build/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/arm64/TestTrackWatchApp.o"
+  },
+  "/Users/stevemilton/Projects/laptime/ios/WatchApp/WatchSessionManager.swift" : {
+    "index-unit-output-path" : "/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/arm64/WatchSessionManager.o",
+    "llvm-bc" : "/Users/stevemilton/Projects/laptime/ios/build/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/arm64/WatchSessionManager.bc",
+    "object" : "/Users/stevemilton/Projects/laptime/ios/build/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/arm64/WatchSessionManager.o"
+  },
+  "/Users/stevemilton/Projects/laptime/ios/build/Runner.build/Release-watchsimulator/WatchApp.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "index-unit-output-path" : "/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "llvm-bc" : "/Users/stevemilton/Projects/laptime/ios/build/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/arm64/GeneratedAssetSymbols.bc",
+    "object" : "/Users/stevemilton/Projects/laptime/ios/build/Runner.build/Release-watchsimulator/WatchApp.build/Objects-normal/arm64/GeneratedAssetSymbols.o"
+  }
+}

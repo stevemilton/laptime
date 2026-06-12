@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/app_colors.dart';
@@ -274,18 +275,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
   }
 
-  void _submitEmail() {
+  Future<void> _submitEmail() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
     final controller = ref.read(authControllerProvider.notifier);
     if (_isSignUp) {
-      controller.signUpWithEmail(
+      final pendingEmail = await controller.signUpWithEmail(
         email: _emailController.text.trim(),
         password: _passwordController.text,
         displayName: _nameController.text.trim().isEmpty
             ? null
             : _nameController.text.trim(),
       );
+      // If email confirmation is required, navigate to the OTP screen.
+      if (pendingEmail != null && mounted) {
+        context.go('/verify-email?email=${Uri.encodeComponent(pendingEmail)}');
+      }
     } else {
       controller.signInWithEmail(
         email: _emailController.text.trim(),

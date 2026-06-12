@@ -56,6 +56,26 @@ final class RecordingManager: NSObject, ObservableObject {
     // Timer
     private var elapsedTimer: Timer?
 
+    #if targetEnvironment(simulator)
+    // Simulated GPS for testing in the Watch Simulator
+    private var simulatedGpsTimer: Timer?
+    private var simPointIndex: Int = 0
+    // Simple oval track (Silverstone-ish lat/lng, ~300m loop)
+    private let simTrack: [(lat: Double, lng: Double)] = {
+        let center = (lat: 52.0786, lng: -1.0169)
+        let count = 40
+        let latRadius = 0.0012  // ~130m N/S
+        let lngRadius = 0.0018  // ~130m E/W
+        return (0..<count).map { i in
+            let angle = 2.0 * .pi * Double(i) / Double(count)
+            return (
+                lat: center.lat + latRadius * sin(angle),
+                lng: center.lng + lngRadius * cos(angle)
+            )
+        }
+    }()
+    #endif
+
     // MARK: - Lifecycle
 
     override init() {
@@ -152,6 +172,10 @@ final class RecordingManager: NSObject, ObservableObject {
     // MARK: - HKWorkoutSession (background execution)
 
     private func startWorkoutSession() {
+        #if targetEnvironment(simulator)
+        print("[RecordingManager] Skipping HKWorkoutSession in simulator")
+        return
+        #else
         guard HKHealthStore.isHealthDataAvailable() else {
             print("[RecordingManager] HealthKit not available")
             return
@@ -174,6 +198,7 @@ final class RecordingManager: NSObject, ObservableObject {
         } catch {
             print("[RecordingManager] Failed to start workout session: \(error)")
         }
+        #endif
     }
 
     private func stopWorkoutSession() {
@@ -192,17 +217,49 @@ final class RecordingManager: NSObject, ObservableObject {
     // MARK: - GPS
 
     private func startGPS() {
+        #if targetEnvironment(simulator)
+        // Simulator: feed fake GPS points around a loop at ~1Hz
+        simPointIndex = 0
+        simulatedGpsTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.emitSimulatedGpsPoint()
+            }
+        }
+        #else
         locationManager.requestWhenInUseAuthorization()
         locationManager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
         locationManager.activityType = .automotiveNavigation
         locationManager.distanceFilter = kCLDistanceFilterNone
         locationManager.allowsBackgroundLocationUpdates = true
         locationManager.startUpdatingLocation()
+        #endif
     }
 
     private func stopGPS() {
+        #if targetEnvironment(simulator)
+        simulatedGpsTimer?.invalidate()
+        simulatedGpsTimer = nil
+        #else
         locationManager.stopUpdatingLocation()
+        #endif
     }
+
+    #if targetEnvironment(simulator)
+    private func emitSimulatedGpsPoint() {
+        let coord = simTrack[simPointIndex % simTrack.count]
+        simPointIndex += 1
+        let point = WatchGpsPoint(
+            lat: coord.lat,
+            lng: coord.lng,
+            alt: 150.0,
+            acc: 5.0,
+            spd: 40.0,  // ~144 km/h
+            hdg: Double((simPointIndex * 9) % 360),
+            ts: Int64(Date().timeIntervalSince1970 * 1000)
+        )
+        onGpsPoint(point)
+    }
+    #endif
 
     // MARK: - Sensors
 

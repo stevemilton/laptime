@@ -14,6 +14,10 @@ import UIKit
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
-    watchHandler.setup(with: engineBridge.engine.binaryMessenger)
+
+    // Get the binary messenger from the root Flutter view controller
+    if let controller = window?.rootViewController as? FlutterViewController {
+      watchHandler.setup(with: controller.binaryMessenger)
+    }
   }
 }

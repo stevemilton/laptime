@@ -9,10 +9,12 @@ import '../../features/sectors/presentation/sectors_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../../features/auth/presentation/login_screen.dart';
 import '../../features/auth/presentation/auth_controller.dart';
+import '../../features/auth/presentation/verify_email_screen.dart';
 import '../../features/disclaimer/presentation/disclaimer_screen.dart';
 import '../../features/recording/presentation/recording_screen.dart';
 import '../../features/session/presentation/session_detail_screen.dart';
 import '../../features/session/presentation/session_edit_screen.dart';
+import '../../features/session/presentation/session_summary_screen.dart';
 import '../../features/session/presentation/sessions_list_screen.dart';
 import '../../features/session/presentation/lap_detail_screen.dart';
 import '../../features/profile/presentation/edit_profile_screen.dart';
@@ -35,27 +37,56 @@ import '../theme/app_colors.dart';
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 final _shellNavigatorKey = GlobalKey<NavigatorState>();
 
-/// GoRouter provider that watches auth + disclaimer state
-/// and redirects accordingly.
+/// Notifier that triggers GoRouter redirect re-evaluation when auth
+/// or disclaimer state changes — without recreating the router.
+class _RouterRefreshNotifier extends ChangeNotifier {
+  _RouterRefreshNotifier(Ref ref) {
+    _subs = [
+      ref.listen<bool>(isAuthenticatedProvider, (_, _) => notifyListeners()),
+      ref.listen<AsyncValue<bool>>(
+          hasAcceptedDisclaimerProvider, (_, _) => notifyListeners()),
+    ];
+  }
+
+  late final List<ProviderSubscription<dynamic>> _subs;
+
+  @override
+  void dispose() {
+    for (final s in _subs) {
+      s.close();
+    }
+    super.dispose();
+  }
+}
+
+/// GoRouter provider — created once, uses [refreshListenable] so that
+/// auth / disclaimer changes trigger redirect re-evaluation without
+/// destroying and recreating the router (which caused GlobalKey conflicts
+/// and navigation state loss).
 final appRouterProvider = Provider<GoRouter>((ref) {
-  final isAuthenticated = ref.watch(isAuthenticatedProvider);
-  final disclaimerAsync = ref.watch(hasAcceptedDisclaimerProvider);
+  final notifier = _RouterRefreshNotifier(ref);
+  ref.onDispose(() => notifier.dispose());
 
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
     initialLocation: '/record',
+    refreshListenable: notifier,
     redirect: (context, state) {
+      final isAuthenticated = ref.read(isAuthenticatedProvider);
+      final disclaimerAsync = ref.read(hasAcceptedDisclaimerProvider);
+
       final path = state.uri.path;
       final onLogin = path == '/login';
+      final onVerifyEmail = path == '/verify-email';
       final onDisclaimer = path == '/disclaimer';
 
-      // Not authenticated -> login
+      // Not authenticated -> login (but allow verify-email screen)
       if (!isAuthenticated) {
-        return onLogin ? null : '/login';
+        return (onLogin || onVerifyEmail) ? null : '/login';
       }
 
-      // Authenticated but on login -> redirect away
-      if (onLogin) {
+      // Authenticated but on login or verify -> redirect away
+      if (onLogin || onVerifyEmail) {
         return '/disclaimer';
       }
 
@@ -87,6 +118,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const LoginScreen(),
       ),
       GoRoute(
+        path: '/verify-email',
+        name: RouteNames.verifyEmail,
+        builder: (context, state) {
+          final email = state.uri.queryParameters['email'] ?? '';
+          return VerifyEmailScreen(email: email);
+        },
+      ),
+      GoRoute(
         path: '/disclaimer',
         name: RouteNames.disclaimer,
         builder: (context, state) => const DisclaimerScreen(),
@@ -113,6 +152,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           final id = state.pathParameters['id']!;
           return SessionDetailScreen(sessionId: id);
+        },
+      ),
+
+      // Session summary (post-recording, full-screen)
+      GoRoute(
+        path: '/session/:id/summary',
+        name: RouteNames.sessionSummary,
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          return SessionSummaryScreen(sessionId: id);
         },
       ),
 
