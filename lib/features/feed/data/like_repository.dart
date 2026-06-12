@@ -18,11 +18,6 @@ class LikeRepository {
               t.sessionId.equals(sessionId) & t.userId.equals(userId)))
         .getSingleOrNull();
 
-    final payload = jsonEncode({
-      'session_id': sessionId,
-      'user_id': userId,
-    });
-
     if (existing != null) {
       // Unlike — delete locally + enqueue sync
       await (_db.delete(_db.localSessionLikes)
@@ -34,13 +29,17 @@ class LikeRepository {
         targetTable: 'session_likes',
         operation: 'delete',
         recordId: '${sessionId}_$userId',
-        payloadJson: payload,
+        payloadJson: jsonEncode({
+          'session_id': sessionId,
+          'user_id': userId,
+        }),
       );
 
       return false;
     } else {
-      // Like — insert locally + enqueue sync
-      await _db.into(_db.localSessionLikes).insert(
+      // Like — insert locally + enqueue sync. insertOnConflictUpdate guards
+      // against a double-tap racing the existence check above.
+      await _db.into(_db.localSessionLikes).insertOnConflictUpdate(
         LocalSessionLikesCompanion.insert(
           sessionId: sessionId,
           userId: userId,
@@ -51,7 +50,11 @@ class LikeRepository {
         targetTable: 'session_likes',
         operation: 'insert',
         recordId: '${sessionId}_$userId',
-        payloadJson: payload,
+        payloadJson: jsonEncode({
+          'session_id': sessionId,
+          'user_id': userId,
+          'created_at': DateTime.now().toUtc().toIso8601String(),
+        }),
       );
 
       return true;

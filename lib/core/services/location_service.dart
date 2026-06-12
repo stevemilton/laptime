@@ -69,6 +69,32 @@ class LocationService {
     return Geolocator.requestPermission();
   }
 
+  /// One-shot current position (used for circuit detection before a
+  /// recording starts). Returns null on timeout or failure.
+  Future<GpsPoint?> getCurrentPosition({
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    try {
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: timeout,
+        ),
+      );
+      return GpsPoint(
+        latitude: position.latitude,
+        longitude: position.longitude,
+        altitude: position.altitude,
+        accuracy: position.accuracy,
+        speed: position.speed,
+        heading: position.heading,
+        timestamp: position.timestamp,
+      );
+    } catch (_) {
+      return _lastPoint;
+    }
+  }
+
   /// Start the GPS stream at high frequency for recording.
   Future<void> startRecording() async {
     await _subscription?.cancel();

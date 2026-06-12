@@ -18,6 +18,7 @@ class LoginScreen extends ConsumerStatefulWidget {
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _showEmailForm = false;
   bool _isSignUp = false;
+  String? _confirmationSentTo;
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _nameController = TextEditingController();
@@ -63,7 +64,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
               // Logo / App Name
               Text(
-                'TestTrack',
+                'LapTime',
                 style: AppTypography.displayMedium.copyWith(
                   color: AppColors.purpleDeep,
                 ),
@@ -171,6 +172,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               onTap: () => setState(() {
                 _showEmailForm = false;
                 _isSignUp = false;
+                _confirmationSentTo = null;
               }),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -190,6 +192,34 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             ),
           ),
           const SizedBox(height: 16),
+
+          // Confirmation email notice (after sign-up with confirmation on)
+          if (_confirmationSentTo != null) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.purplePale,
+                borderRadius: BorderRadius.circular(AppRadii.md),
+              ),
+              child: Row(
+                children: [
+                  const Icon(LucideIcons.mail,
+                      size: 18, color: AppColors.purple),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Confirmation email sent to $_confirmationSentTo. '
+                      'Confirm your address, then sign in.',
+                      style: AppTypography.bodySmall.copyWith(
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
 
           // Name field (sign up only)
           if (_isSignUp) ...[
@@ -254,10 +284,30 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           ),
           const SizedBox(height: 12),
 
+          // Forgot password (sign in only)
+          if (!_isSignUp) ...[
+            Center(
+              child: GestureDetector(
+                onTap: isLoading ? null : _forgotPassword,
+                child: Text(
+                  'Forgot password?',
+                  style: AppTypography.bodySmall.copyWith(
+                    color: AppColors.purple,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+
           // Toggle sign in / sign up
           Center(
             child: GestureDetector(
-              onTap: () => setState(() => _isSignUp = !_isSignUp),
+              onTap: () => setState(() {
+                _isSignUp = !_isSignUp;
+                if (_isSignUp) _confirmationSentTo = null;
+              }),
               child: Text(
                 _isSignUp
                     ? 'Already have an account? Sign in'
@@ -274,22 +324,98 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
   }
 
-  void _submitEmail() {
+  Future<void> _submitEmail() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
     final controller = ref.read(authControllerProvider.notifier);
     if (_isSignUp) {
-      controller.signUpWithEmail(
-        email: _emailController.text.trim(),
+      final email = _emailController.text.trim();
+      final confirmationRequired = await controller.signUpWithEmail(
+        email: email,
         password: _passwordController.text,
         displayName: _nameController.text.trim().isEmpty
             ? null
             : _nameController.text.trim(),
       );
+      if (confirmationRequired && mounted) {
+        // No session yet - tell the user to check their inbox instead of
+        // silently doing nothing.
+        setState(() {
+          _isSignUp = false;
+          _confirmationSentTo = email;
+          _passwordController.clear();
+        });
+      }
     } else {
-      controller.signInWithEmail(
+      await controller.signInWithEmail(
         email: _emailController.text.trim(),
         password: _passwordController.text,
+      );
+    }
+  }
+
+  Future<void> _forgotPassword() async {
+    final emailController =
+        TextEditingController(text: _emailController.text.trim());
+    final email = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reset Password'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              "Enter your account email and we'll send you a link to reset "
+              'your password.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: emailController,
+              keyboardType: TextInputType.emailAddress,
+              autocorrect: false,
+              decoration: const InputDecoration(
+                labelText: 'Email',
+                prefixIcon: Icon(LucideIcons.mail, size: 18),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, emailController.text.trim()),
+            child: const Text('Send Link'),
+          ),
+        ],
+      ),
+    );
+    emailController.dispose();
+
+    if (email == null || !mounted) return;
+    if (!email.contains('@')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Enter a valid email address'),
+          backgroundColor: AppColors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    await ref.read(authControllerProvider.notifier).resetPassword(email);
+    if (!mounted) return;
+    // Errors surface via the authControllerProvider listener above.
+    if (!ref.read(authControllerProvider).hasError) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Password reset link sent to $email'),
+          backgroundColor: AppColors.green,
+          behavior: SnackBarBehavior.floating,
+        ),
       );
     }
   }

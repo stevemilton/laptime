@@ -4,6 +4,7 @@ import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/supabase_provider.dart';
 import '../../../core/providers/sync_provider.dart';
 import '../../../core/providers/preferences_provider.dart';
+import '../../sectors/data/sector_repository.dart';
 import '../data/recording_repository.dart';
 
 /// Provider for the recording repository.
@@ -34,18 +35,35 @@ class RecordingController extends StateNotifier<AsyncValue<void>> {
   RecordingRepository get _repo => _ref.read(recordingRepositoryProvider);
 
   /// Start a new recording session.
-  Future<String?> startSession() async {
+  ///
+  /// [circuitId] arms automatic lap detection when the circuit has a
+  /// start/finish line; [carId] attributes the session to a garage car.
+  Future<String?> startSession({String? circuitId, String? carId}) async {
     state = const AsyncLoading();
     try {
       final user = _ref.read(currentUserProvider);
       if (user == null) throw Exception('Not authenticated');
 
-      final sessionId = await _repo.startSession(userId: user.id);
+      final sessionId = await _repo.startSession(
+        userId: user.id,
+        circuitId: circuitId,
+        carId: carId,
+      );
       state = const AsyncData(null);
       return sessionId;
     } catch (e, st) {
       state = AsyncError(e, st);
       return null;
+    }
+  }
+
+  /// Finalize sessions left open by a crash or force-quit, then sync them.
+  Future<void> recoverOrphanedSessions() async {
+    final user = _ref.read(currentUserProvider);
+    if (user == null) return;
+    final recovered = await _repo.recoverOrphanedSessions(user.id);
+    if (recovered > 0) {
+      _ref.read(syncServiceProvider).requestSync();
     }
   }
 
@@ -61,6 +79,15 @@ class RecordingController extends StateNotifier<AsyncValue<void>> {
       final privacy = _ref.read(defaultPrivacyProvider);
       final isPublic = privacy != 'Private';
       final sessionId = await _repo.stopSession(isPublic: isPublic);
+
+      if (sessionId != null) {
+        // Score the new laps against the circuit's sectors (own and other
+        // users'). Fire-and-forget: never blocks finishing a session.
+        unawaited(_ref
+            .read(sectorRepositoryProvider)
+            .persistSectorTimesForSession(sessionId)
+            .then((_) => _ref.read(syncServiceProvider).requestSync()));
+      }
 
       // Trigger immediate sync so session + laps + sensor data upload promptly.
       _ref.read(syncServiceProvider).requestSync();

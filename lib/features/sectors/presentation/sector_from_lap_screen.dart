@@ -187,7 +187,8 @@ class _SectorFromLapScreenState extends ConsumerState<SectorFromLapScreen> {
       final db = ref.read(databaseProvider);
       final repo = SectorRepository(db);
 
-      final sectorId = await repo.createSector(
+      // createSector retroactively scores all existing laps itself.
+      await repo.createSector(
         circuitId: _selectedCircuitId!,
         createdBy: user.id,
         name: name,
@@ -196,9 +197,6 @@ class _SectorFromLapScreenState extends ConsumerState<SectorFromLapScreen> {
         endLat: endPoint.latitude,
         endLng: endPoint.longitude,
       );
-
-      // Retroactively score all existing laps
-      await repo.persistSectorTimesForCircuit(sectorId);
 
       if (mounted) context.pop();
     } catch (e) {

@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/supabase_provider.dart';
 import '../../profile/data/profile_providers.dart';
 import '../../profile/data/ensure_local_profile.dart';
@@ -39,32 +41,34 @@ class AuthController extends StateNotifier<AsyncValue<void>> {
   AuthRepository get _repo => _ref.read(authRepositoryProvider);
 
   /// Ensures a local profile row exists in Drift after sign-in.
-  Future<void> _ensureLocalProfile() async {
+  Future<void> _ensureLocalProfile({String? fullName}) async {
     final repo = _ref.read(profileRepositoryProvider);
-    await ensureLocalProfile(repo);
+    await ensureLocalProfile(repo, fullName: fullName);
   }
 
-  /// Sign in with Apple.
+  /// Sign in with Apple. Cancellation is a silent no-op.
   Future<void> signInWithApple() async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      final AuthResponse response = await _repo.signInWithApple();
-      if (response.user == null) {
+      final SocialSignInResult result = await _repo.signInWithApple();
+      if (result.cancelled) return;
+      if (result.response?.user == null) {
         throw AuthException('Apple Sign-In completed but no user returned');
       }
-      await _ensureLocalProfile();
+      await _ensureLocalProfile(fullName: result.fullName);
     });
   }
 
-  /// Sign in with Google.
+  /// Sign in with Google. Cancellation is a silent no-op.
   Future<void> signInWithGoogle() async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      final AuthResponse response = await _repo.signInWithGoogle();
-      if (response.user == null) {
+      final SocialSignInResult result = await _repo.signInWithGoogle();
+      if (result.cancelled) return;
+      if (result.response?.user == null) {
         throw AuthException('Google Sign-In completed but no user returned');
       }
-      await _ensureLocalProfile();
+      await _ensureLocalProfile(fullName: result.fullName);
     });
   }
 
@@ -87,12 +91,16 @@ class AuthController extends StateNotifier<AsyncValue<void>> {
   }
 
   /// Sign up with email/password.
-  Future<void> signUpWithEmail({
+  ///
+  /// Returns true when email confirmation is required: Supabase created
+  /// the user and sent a confirmation email, but no session exists yet.
+  Future<bool> signUpWithEmail({
     required String email,
     required String password,
     String? displayName,
   }) async {
     state = const AsyncLoading();
+    var confirmationRequired = false;
     state = await AsyncValue.guard(() async {
       final AuthResponse response = await _repo.signUpWithEmail(
         email: email,
@@ -102,8 +110,14 @@ class AuthController extends StateNotifier<AsyncValue<void>> {
       if (response.user == null) {
         throw AuthException('Sign-up completed but no user returned');
       }
+      if (response.session == null) {
+        // Email confirmation is enabled - no session until confirmed.
+        confirmationRequired = true;
+        return;
+      }
       await _ensureLocalProfile();
     });
+    return confirmationRequired && !state.hasError;
   }
 
   /// Send password reset email.
@@ -112,9 +126,19 @@ class AuthController extends StateNotifier<AsyncValue<void>> {
     state = await AsyncValue.guard(() => _repo.resetPassword(email));
   }
 
-  /// Sign out.
+  /// Sign out and wipe all local data (Drift DB + shared preferences).
+  ///
+  /// The local database belongs to the signed-out user; leaving it on the
+  /// device would expose it to the next account and push the previous
+  /// user's sync queue under the wrong JWT.
   Future<void> signOut() async {
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() => _repo.signOut());
+    state = await AsyncValue.guard(() async {
+      final db = _ref.read(databaseProvider);
+      await db.wipeAllData();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+      await _repo.signOut();
+    });
   }
 }

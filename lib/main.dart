@@ -35,7 +35,7 @@ void main() async {
 
   runApp(
     const ProviderScope(
-      child: TestTrackApp(),
+      child: LapTimeApp(),
     ),
   );
 }

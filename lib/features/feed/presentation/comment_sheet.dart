@@ -9,6 +9,7 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/format_utils.dart';
 import '../../../core/widgets/app_avatar.dart';
 import '../data/comment_repository.dart';
+import '../data/feed_providers.dart' show teamsFeedProvider;
 import 'feed_screen.dart' show followingFeedProvider, nearbyFeedProvider;
 
 /// Opens a bottom sheet displaying comments for a session.
@@ -101,6 +102,7 @@ class _CommentSheetState extends ConsumerState<_CommentSheet> {
       // Invalidate feed providers so comment count updates on cards
       ref.invalidate(followingFeedProvider);
       ref.invalidate(nearbyFeedProvider);
+      ref.invalidate(teamsFeedProvider);
     } catch (e) {
       debugPrint('[Comments] Failed to send comment: $e');
       if (mounted) {

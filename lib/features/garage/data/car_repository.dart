@@ -1,51 +1,41 @@
-// ignore_for_file: use_null_aware_elements
-
 import 'dart:convert';
 import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/providers/database_provider.dart';
+import '../../../core/services/sync_payloads.dart';
 
 /// Groups optional car fields for create/update operations.
+///
+/// Every field uses Drift's [Value] wrapper so callers can distinguish
+/// "not provided, leave unchanged" ([Value.absent]) from "explicitly
+/// cleared" (`Value(null)`) - this is what makes "Remove Photo" and
+/// clearing other optional fields actually stick.
 class CarFormData {
   const CarFormData({
-    this.year,
-    this.carClass,
-    this.colour,
-    this.imageUrl,
-    this.powerHp,
-    this.weightKg,
-    this.drivetrain,
-    this.engineCapacity,
-    this.modifications,
-    this.tyreSetup,
+    this.year = const Value.absent(),
+    this.carClass = const Value.absent(),
+    this.colour = const Value.absent(),
+    this.imageUrl = const Value.absent(),
+    this.powerHp = const Value.absent(),
+    this.weightKg = const Value.absent(),
+    this.drivetrain = const Value.absent(),
+    this.engineCapacity = const Value.absent(),
+    this.modifications = const Value.absent(),
+    this.tyreSetup = const Value.absent(),
   });
 
-  final int? year;
-  final String? carClass;
-  final String? colour;
-  final String? imageUrl;
-  final int? powerHp;
-  final int? weightKg;
-  final String? drivetrain;
-  final String? engineCapacity;
-  final String? modifications;
-  final String? tyreSetup;
-
-  /// Build the sync payload map (uses Supabase column names).
-  Map<String, dynamic> toSyncPayload() => {
-        if (year != null) 'year': year,
-        if (carClass != null) 'class': carClass,
-        if (colour != null) 'colour': colour,
-        if (imageUrl != null) 'image_url': imageUrl,
-        if (powerHp != null) 'power_hp': powerHp,
-        if (weightKg != null) 'weight_kg': weightKg,
-        if (drivetrain != null) 'drivetrain': drivetrain,
-        if (engineCapacity != null) 'engine_capacity': engineCapacity,
-        if (modifications != null) 'modifications': modifications,
-        if (tyreSetup != null) 'tyre_setup': tyreSetup,
-      };
+  final Value<int?> year;
+  final Value<String?> carClass;
+  final Value<String?> colour;
+  final Value<String?> imageUrl;
+  final Value<int?> powerHp;
+  final Value<int?> weightKg;
+  final Value<String?> drivetrain;
+  final Value<String?> engineCapacity;
+  final Value<String?> modifications;
+  final Value<String?> tyreSetup;
 }
 
 /// Repository for car CRUD operations (Garage feature).
@@ -91,41 +81,28 @@ class CarRepository {
         userId: userId,
         make: make,
         model: model,
-        year: Value(data.year),
-        carClass: Value(data.carClass),
-        colour: Value(data.colour),
-        imageUrl: Value(data.imageUrl),
-        powerHp: Value(data.powerHp),
-        weightKg: Value(data.weightKg),
-        drivetrain: Value(data.drivetrain),
-        engineCapacity: Value(data.engineCapacity),
-        modifications: Value(data.modifications),
-        tyreSetup: Value(data.tyreSetup),
+        year: data.year,
+        carClass: data.carClass,
+        colour: data.colour,
+        imageUrl: data.imageUrl,
+        powerHp: data.powerHp,
+        weightKg: data.weightKg,
+        drivetrain: data.drivetrain,
+        engineCapacity: data.engineCapacity,
+        modifications: data.modifications,
+        tyreSetup: data.tyreSetup,
         createdAt: Value(now),
       ),
     );
 
-    await _db.enqueueSync(
-      targetTable: 'cars',
-      operation: 'insert',
-      recordId: id,
-      payloadJson: jsonEncode({
-        'id': id,
-        'user_id': userId,
-        'make': make,
-        'model': model,
-        ...data.toSyncPayload(),
-        'created_at': now.toIso8601String(),
-      }),
-    );
-
+    await _enqueueFullRow(id, 'insert');
     return id;
   }
 
   /// Update an existing car.
   ///
-  /// Uses insertOnConflictUpdate (upsert) to ensure all fields are explicitly
-  /// written, matching the pattern used by ProfileRepository.updateProfile.
+  /// Fields wrapped in [Value.absent] are left unchanged; fields set to
+  /// `Value(null)` are cleared locally and remotely.
   Future<void> updateCar({
     required String carId,
     String? make,
@@ -142,30 +119,49 @@ class CarRepository {
         userId: existing.userId,
         make: make ?? existing.make,
         model: model ?? existing.model,
-        year: Value(data.year ?? existing.year),
-        carClass: Value(data.carClass ?? existing.carClass),
-        colour: Value(data.colour ?? existing.colour),
-        imageUrl: Value(data.imageUrl ?? existing.imageUrl),
-        powerHp: Value(data.powerHp ?? existing.powerHp),
-        weightKg: Value(data.weightKg ?? existing.weightKg),
-        drivetrain: Value(data.drivetrain ?? existing.drivetrain),
-        engineCapacity: Value(data.engineCapacity ?? existing.engineCapacity),
-        modifications: Value(data.modifications ?? existing.modifications),
-        tyreSetup: Value(data.tyreSetup ?? existing.tyreSetup),
+        year: data.year.present ? data.year : Value(existing.year),
+        carClass:
+            data.carClass.present ? data.carClass : Value(existing.carClass),
+        colour: data.colour.present ? data.colour : Value(existing.colour),
+        imageUrl:
+            data.imageUrl.present ? data.imageUrl : Value(existing.imageUrl),
+        powerHp:
+            data.powerHp.present ? data.powerHp : Value(existing.powerHp),
+        weightKg:
+            data.weightKg.present ? data.weightKg : Value(existing.weightKg),
+        drivetrain: data.drivetrain.present
+            ? data.drivetrain
+            : Value(existing.drivetrain),
+        engineCapacity: data.engineCapacity.present
+            ? data.engineCapacity
+            : Value(existing.engineCapacity),
+        modifications: data.modifications.present
+            ? data.modifications
+            : Value(existing.modifications),
+        tyreSetup:
+            data.tyreSetup.present ? data.tyreSetup : Value(existing.tyreSetup),
         createdAt: Value(existing.createdAt),
       ),
     );
 
-    final payload = <String, dynamic>{'id': carId};
-    if (make != null) payload['make'] = make;
-    if (model != null) payload['model'] = model;
-    payload.addAll(data.toSyncPayload());
+    await _enqueueFullRow(carId, 'update');
+  }
+
+  /// Enqueue the FULL row (read back from Drift) for sync. The sync engine
+  /// executes inserts/updates as upserts, so partial payloads would
+  /// violate NOT NULL constraints or silently drop cleared fields.
+  Future<void> _enqueueFullRow(String carId, String operation) async {
+    final row = await getCar(carId);
+    if (row == null) return;
 
     await _db.enqueueSync(
       targetTable: 'cars',
-      operation: 'update',
+      operation: operation,
       recordId: carId,
-      payloadJson: jsonEncode(payload),
+      payloadJson: jsonEncode({
+        ...SyncPayloads.car(row),
+        'created_at': row.createdAt.toIso8601String(),
+      }),
     );
   }
 

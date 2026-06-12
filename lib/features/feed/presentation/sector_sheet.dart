@@ -53,6 +53,9 @@ class _SectorSheetState extends ConsumerState<_SectorSheet> {
   Future<void> _loadSectors() async {
     final db = ref.read(databaseProvider);
     final repo = SectorRepository(db);
+    // The session author's circuit is usually not in the local cache —
+    // pull its sectors from Supabase first.
+    await repo.refreshCircuitSectors(widget.circuitId);
     final sectors = await repo.getCircuitSectors(widget.circuitId);
     if (mounted) {
       setState(() {
