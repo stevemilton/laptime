@@ -103,7 +103,7 @@ abstract final class SyncPayloads {
         'gps_lng': c.gpsLng,
         'start_finish_line_json': tryDecode(c.startFinishLineJson),
         'length_m': c.lengthM,
-        if (createdBy != null) 'created_by': createdBy,
+        'created_by': ?createdBy,
       };
 
   /// Decode a locally stored JSON string into an object for a JSONB/array

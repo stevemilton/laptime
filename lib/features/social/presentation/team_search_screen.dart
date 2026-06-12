@@ -315,7 +315,7 @@ class _SearchResults extends ConsumerWidget {
         return ListView.separated(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           itemCount: results.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 10),
+          separatorBuilder: (_, _) => const SizedBox(height: 10),
           itemBuilder: (context, index) {
             final team = results[index];
             return AppCard(
@@ -373,7 +373,7 @@ class _SearchResults extends ConsumerWidget {
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (_, __) => const EmptyState(
+      error: (_, _) => const EmptyState(
         icon: LucideIcons.alertCircle,
         title: 'Search failed',
         subtitle: 'Could not search teams. Please try again.',

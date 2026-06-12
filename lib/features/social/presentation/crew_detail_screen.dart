@@ -36,7 +36,7 @@ class CrewDetailScreen extends ConsumerWidget {
         ),
         body: const Center(child: CircularProgressIndicator()),
       ),
-      error: (_, __) => Scaffold(
+      error: (_, _) => Scaffold(
         backgroundColor: AppColors.white,
         appBar: AppBar(
           leading: IconButton(
