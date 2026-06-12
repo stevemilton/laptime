@@ -436,9 +436,9 @@ class _LapComparisonScreenState extends ConsumerState<LapComparisonScreen>
 
     final units = ref.watch(unitsProvider);
     final unit = FormatUtils.speedUnit(units);
-    final factor = units == UnitSystem.imperial ? 0.621371 : 1.0;
-    List<double> convert(List<double> kmh) =>
-        factor == 1.0 ? kmh : kmh.map((v) => v * factor).toList();
+    List<double> convert(List<double> kmh) => kmh
+        .map((v) => FormatUtils.kmhToDisplay(v, units: units))
+        .toList();
 
     return Padding(
       padding: const EdgeInsets.all(16),

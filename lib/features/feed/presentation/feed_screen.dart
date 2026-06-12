@@ -353,6 +353,13 @@ class _FeedCard extends ConsumerWidget {
   }
 }
 
+/// Optimistic like state keyed by session id. Lives outside the widget so
+/// it survives ListView recycling — the cached FeedItem keeps its
+/// pre-toggle counts until the next refetch, and a recycled pill must not
+/// visually revert a like the user already made.
+final _likeOverridesProvider =
+    StateProvider<Map<String, ({bool isLiked, int likeCount})>>((ref) => {});
+
 class _LikePill extends ConsumerStatefulWidget {
   const _LikePill({required this.item});
 
@@ -370,17 +377,29 @@ class _LikePillState extends ConsumerState<_LikePill> {
   @override
   void initState() {
     super.initState();
-    _isLiked = widget.item.isLikedByMe;
-    _likeCount = widget.item.likeCount;
+    _syncFromSource();
   }
 
   @override
   void didUpdateWidget(covariant _LikePill oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.item.sessionId != widget.item.sessionId) {
-      _isLiked = widget.item.isLikedByMe;
-      _likeCount = widget.item.likeCount;
+      _syncFromSource();
     }
+  }
+
+  void _syncFromSource() {
+    final override =
+        ref.read(_likeOverridesProvider)[widget.item.sessionId];
+    _isLiked = override?.isLiked ?? widget.item.isLikedByMe;
+    _likeCount = override?.likeCount ?? widget.item.likeCount;
+  }
+
+  void _storeOverride() {
+    ref.read(_likeOverridesProvider.notifier).update((overrides) => {
+          ...overrides,
+          widget.item.sessionId: (isLiked: _isLiked, likeCount: _likeCount),
+        });
   }
 
   Future<void> _toggle() async {
@@ -395,6 +414,7 @@ class _LikePillState extends ConsumerState<_LikePill> {
       _isLiked = !_isLiked;
       _likeCount += _isLiked ? 1 : -1;
     });
+    _storeOverride();
 
     try {
       final repo = LikeRepository(ref.read(databaseProvider));
@@ -408,6 +428,7 @@ class _LikePillState extends ConsumerState<_LikePill> {
           _isLiked = !_isLiked;
           _likeCount += _isLiked ? 1 : -1;
         });
+        _storeOverride();
       }
     } finally {
       if (mounted) setState(() => _toggling = false);

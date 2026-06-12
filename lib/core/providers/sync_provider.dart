@@ -84,28 +84,35 @@ final reconciliationServiceProvider = Provider<ReconciliationService>((ref) {
   );
 });
 
-const _kResyncFlagKey = 'v2_resync_done';
+const _kResyncVersionKey = 'resync_version';
 
-/// One-shot gate that re-uploads all local data after the v2 update.
+/// Bump this whenever a release fixes sync payloads in a way that requires
+/// historical local data to be re-uploaded (mirrors Drift's schemaVersion /
+/// onUpgrade pattern). v2 fixed the payload<->schema drift (D1-D7).
+const _kCurrentResyncVersion = 2;
+
+/// Gate that re-uploads all local data after a payload-fixing update.
 ///
 /// Pre-v2 builds dead-lettered most synced data because the payloads didn't
-/// match the remote schema; the local rows are intact, so a single
-/// reconciliation pass recovers everything. Watched from the app root so it
-/// runs once per install as soon as a user is signed in.
+/// match the remote schema; the local rows are intact, so a reconciliation
+/// pass recovers everything. Watched from the app root; runs once per
+/// version bump as soon as a user is signed in.
 final resyncGateProvider = Provider<void>((ref) {
-  Future<void> runOnce(String userId) async {
+  Future<void> runIfOutdated(String userId) async {
     final prefs = await SharedPreferences.getInstance();
-    if (prefs.getBool(_kResyncFlagKey) ?? false) return;
+    if ((prefs.getInt(_kResyncVersionKey) ?? 0) >= _kCurrentResyncVersion) {
+      return;
+    }
     await ref.read(reconciliationServiceProvider).resyncAll(userId);
-    await prefs.setBool(_kResyncFlagKey, true);
+    await prefs.setInt(_kResyncVersionKey, _kCurrentResyncVersion);
   }
 
   ref.listen(currentUserProvider, (previous, user) {
-    if (user != null) runOnce(user.id);
+    if (user != null) runIfOutdated(user.id);
   });
 
   final user = ref.read(currentUserProvider);
-  if (user != null) runOnce(user.id);
+  if (user != null) runIfOutdated(user.id);
 });
 
 /// Observer that hooks into [AppLifecycleState] changes and triggers the

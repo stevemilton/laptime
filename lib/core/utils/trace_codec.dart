@@ -104,16 +104,7 @@ abstract final class TraceCodec {
     if (trace.length < 2) return trace;
     if (hasTimestamps(trace)) return trace;
 
-    final cumulative = List<double>.filled(trace.length, 0);
-    for (var i = 1; i < trace.length; i++) {
-      cumulative[i] = cumulative[i - 1] +
-          GeoUtils.distanceMeters(
-            trace[i - 1].lat,
-            trace[i - 1].lng,
-            trace[i].lat,
-            trace[i].lng,
-          );
-    }
+    final cumulative = cumulativeDistances(trace);
     final total = cumulative.last;
     if (total <= 0) return trace;
 

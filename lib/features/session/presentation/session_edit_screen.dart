@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -104,24 +105,24 @@ class _SessionEditScreenState extends ConsumerState<SessionEditScreen> {
 
       await repo.updateSession(
         sessionId: widget.sessionId,
-        circuitName: _circuitNameController.text.trim().isEmpty
+        circuitName: Value(_circuitNameController.text.trim().isEmpty
             ? null
-            : _circuitNameController.text.trim(),
-        carId: _selectedCarId,
-        trackCondition: _trackCondition,
-        tyreBrand: _tyreBrandController.text.isNotEmpty
+            : _circuitNameController.text.trim()),
+        carId: Value(_selectedCarId),
+        trackCondition: Value(_trackCondition),
+        tyreBrand: Value(_tyreBrandController.text.isNotEmpty
             ? _tyreBrandController.text
-            : null,
-        tyreCompound: _tyreCompoundController.text.isNotEmpty
+            : null),
+        tyreCompound: Value(_tyreCompoundController.text.isNotEmpty
             ? _tyreCompoundController.text
-            : null,
-        tyreAgeLaps: tyreAgeLaps,
-        setupNotes: _setupNotesController.text.isNotEmpty
+            : null),
+        tyreAgeLaps: Value(tyreAgeLaps),
+        setupNotes: Value(_setupNotesController.text.isNotEmpty
             ? _setupNotesController.text
-            : null,
-        sessionNotes: _sessionNotesController.text.isNotEmpty
+            : null),
+        sessionNotes: Value(_sessionNotesController.text.isNotEmpty
             ? _sessionNotesController.text
-            : null,
+            : null),
         isPublic: _isPublic,
       );
 

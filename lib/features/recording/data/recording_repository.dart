@@ -41,18 +41,6 @@ class RecordingState {
   /// Current GPS speed in m/s (Doppler), for live display.
   final double? speedMps;
   final WeatherData? weather;
-
-  factory RecordingState.initial() => RecordingState(
-        isRecording: false,
-        sessionId: null,
-        elapsedMs: 0,
-        lapCount: 0,
-        currentLapMs: 0,
-        lastLapMs: null,
-        bestLapMs: null,
-        gpsAccuracy: null,
-        gpsPoints: const [],
-      );
 }
 
 /// Orchestrates GPS, sensors, weather, and lap detection during a recording
@@ -89,6 +77,9 @@ class RecordingRepository {
   final List<GpsPoint> _currentLapPoints = [];
   // All points for the full session
   final List<GpsPoint> _allPoints = [];
+  // Immutable snapshot of _allPoints, rebuilt only when a point arrives —
+  // the 100ms state timer must not copy the whole trace on every tick.
+  List<GpsPoint> _allPointsSnapshot = const [];
   // In-flight lap persistence, awaited before the session is finalized.
   final List<Future<void>> _pendingPersists = [];
 
@@ -109,7 +100,7 @@ class RecordingRepository {
         lastLapMs: _lastLapMs,
         bestLapMs: _bestLapMs,
         gpsAccuracy: _locationService.lastPoint?.accuracy,
-        gpsPoints: List.unmodifiable(_allPoints),
+        gpsPoints: _allPointsSnapshot,
         speedMps: _locationService.lastPoint?.speed,
         weather: _weather,
       );
@@ -133,6 +124,7 @@ class RecordingRepository {
     _circuitBestMs = null;
     _currentLapPoints.clear();
     _allPoints.clear();
+    _allPointsSnapshot = const [];
     _pendingPersists.clear();
     _lapDetection.reset();
 
@@ -208,14 +200,23 @@ class RecordingRepository {
 
     final sessionId = _sessionId!;
 
-    // The tail since the last crossing is an in-lap, not a real lap: it
-    // must never count as a lap (or worse, a personal best). Only when the
-    // session produced no laps at all do we keep it, unflagged, so the
-    // session isn't empty.
-    if (_lapCount == 0 && _currentLapPoints.length >= 2) {
-      final lapPoints = List<GpsPoint>.of(_currentLapPoints);
-      _currentLapPoints.clear();
-      _onLapBoundary(DateTime.now(), lapPoints, neverPersonalBest: true);
+    // Close out the trailing segment:
+    // - Manual-split mode (no start/finish line armed): Stop ends the
+    //   running lap, exactly like tapping Manual Lap — keep it as a real
+    //   lap. Dropping it would silently lose the user's final lap.
+    // - Automatic mode: the tail after the last crossing is an in-lap.
+    //   Keep it only when the session produced no laps at all (so the
+    //   session isn't empty), flagged partial and never PB-eligible.
+    if (_currentLapPoints.length >= 2) {
+      if (!_lapDetection.isArmed) {
+        final lapPoints = List<GpsPoint>.of(_currentLapPoints);
+        _currentLapPoints.clear();
+        _onLapBoundary(DateTime.now(), lapPoints);
+      } else if (_lapCount == 0) {
+        final lapPoints = List<GpsPoint>.of(_currentLapPoints);
+        _currentLapPoints.clear();
+        _onLapBoundary(DateTime.now(), lapPoints, neverPersonalBest: true);
+      }
     }
 
     // Make sure every lap (and its sensor data) is on disk before the
@@ -299,6 +300,7 @@ class RecordingRepository {
   void _onGpsPoint(GpsPoint point) {
     _currentLapPoints.add(point);
     _allPoints.add(point);
+    _allPointsSnapshot = List.unmodifiable(_allPoints);
 
     final crossing = _lapDetection.processPoint(point);
     if (crossing == null) return;
@@ -359,17 +361,16 @@ class RecordingRepository {
       if (isPB) _circuitBestMs = durationMs;
     }
 
-    final persist = _persistLap(
+    _pendingPersists.add(_persistLap(
       sessionId: _sessionId!,
       lapNumber: lapNumber,
       durationMs: durationMs,
       isPB: isPB,
+      isPartial: neverPersonalBest,
       lapStart: lapStart,
       lapPoints: lapPoints,
       sensorSnapshot: sensorSnapshot,
-    );
-    _pendingPersists.add(persist);
-    unawaited(persist);
+    ));
 
     _emitState();
   }
@@ -381,100 +382,64 @@ class RecordingRepository {
     required int lapNumber,
     required int durationMs,
     required bool isPB,
+    required bool isPartial,
     required DateTime lapStart,
     required List<GpsPoint> lapPoints,
     required LapSensorSnapshot sensorSnapshot,
   }) async {
     try {
-      await _persistLapInner(
+      final lapId = _uuid.v4();
+      final lap = LocalLap(
+        id: lapId,
         sessionId: sessionId,
         lapNumber: lapNumber,
         durationMs: durationMs,
-        isPB: isPB,
-        lapStart: lapStart,
-        lapPoints: lapPoints,
-        sensorSnapshot: sensorSnapshot,
+        isPersonalBest: isPB,
+        isPartial: isPartial,
+        traceJson: TraceCodec.encode(lapPoints, lapStart),
+        createdAt: DateTime.now(),
       );
+
+      await _db.into(_db.localLaps).insert(lap);
+
+      // Payloads come from SyncPayloads — the single source of truth for
+      // the client -> server column mapping.
+      await _db.enqueueSync(
+        targetTable: 'laps',
+        operation: 'insert',
+        recordId: lapId,
+        payloadJson: jsonEncode(SyncPayloads.lap(lap)),
+      );
+
+      if (sensorSnapshot.timestamps.isEmpty) return;
+
+      final sensorRow = LocalLapSensorDataData(
+        id: _uuid.v4(),
+        lapId: lapId,
+        timestampsJson: jsonEncode(sensorSnapshot.timestamps),
+        accelXJson: jsonEncode(sensorSnapshot.accelX),
+        accelYJson: jsonEncode(sensorSnapshot.accelY),
+        accelZJson: jsonEncode(sensorSnapshot.accelZ),
+        gyroXJson: jsonEncode(sensorSnapshot.gyroX),
+        gyroYJson: jsonEncode(sensorSnapshot.gyroY),
+        gyroZJson: jsonEncode(sensorSnapshot.gyroZ),
+        baroPressureJson: jsonEncode(sensorSnapshot.baroPressure),
+        magHeadingJson: jsonEncode(sensorSnapshot.magHeading),
+      );
+      await _db.into(_db.localLapSensorData).insert(sensorRow);
+      await _enqueueSensorData(sensorRow);
     } catch (e) {
       debugPrint('RecordingRepository: lap persist failed: $e');
     }
   }
 
-  Future<void> _persistLapInner({
-    required String sessionId,
-    required int lapNumber,
-    required int durationMs,
-    required bool isPB,
-    required DateTime lapStart,
-    required List<GpsPoint> lapPoints,
-    required LapSensorSnapshot sensorSnapshot,
-  }) async {
-    final lapId = _uuid.v4();
-    final traceJson = TraceCodec.encode(lapPoints, lapStart);
-
-    await _db.into(_db.localLaps).insert(
-      LocalLapsCompanion.insert(
-        id: lapId,
-        sessionId: sessionId,
-        lapNumber: lapNumber,
-        durationMs: durationMs,
-        isPersonalBest: Value(isPB),
-        traceJson: Value(traceJson),
-      ),
-    );
-
-    await _db.enqueueSync(
-      targetTable: 'laps',
-      operation: 'insert',
-      recordId: lapId,
-      payloadJson: jsonEncode({
-        'id': lapId,
-        'session_id': sessionId,
-        'lap_number': lapNumber,
-        'duration_ms': durationMs,
-        'is_personal_best': isPB,
-        'trace_json': TraceCodec.toJsonList(lapPoints, lapStart),
-      }),
-    );
-
-    if (sensorSnapshot.timestamps.isEmpty) return;
-
-    final sensorId = _uuid.v4();
-    await _db.into(_db.localLapSensorData).insert(
-      LocalLapSensorDataCompanion.insert(
-        id: sensorId,
-        lapId: lapId,
-        timestampsJson: jsonEncode(sensorSnapshot.timestamps),
-        accelXJson: Value(jsonEncode(sensorSnapshot.accelX)),
-        accelYJson: Value(jsonEncode(sensorSnapshot.accelY)),
-        accelZJson: Value(jsonEncode(sensorSnapshot.accelZ)),
-        gyroXJson: Value(jsonEncode(sensorSnapshot.gyroX)),
-        gyroYJson: Value(jsonEncode(sensorSnapshot.gyroY)),
-        gyroZJson: Value(jsonEncode(sensorSnapshot.gyroZ)),
-        baroPressureJson: Value(jsonEncode(sensorSnapshot.baroPressure)),
-        magHeadingJson: Value(jsonEncode(sensorSnapshot.magHeading)),
-      ),
-    );
-
-    // Column names and raw arrays match the remote lap_sensor_data table;
-    // the sync engine chunks oversized payloads.
+  Future<void> _enqueueSensorData(LocalLapSensorDataData sensorRow) async {
+    // The sync engine chunks oversized payloads.
     await _db.enqueueSync(
       targetTable: 'lap_sensor_data',
       operation: 'insert',
-      recordId: sensorId,
-      payloadJson: jsonEncode({
-        'id': sensorId,
-        'lap_id': lapId,
-        'timestamps': sensorSnapshot.timestamps,
-        'accel_x': sensorSnapshot.accelX,
-        'accel_y': sensorSnapshot.accelY,
-        'accel_z': sensorSnapshot.accelZ,
-        'gyro_x': sensorSnapshot.gyroX,
-        'gyro_y': sensorSnapshot.gyroY,
-        'gyro_z': sensorSnapshot.gyroZ,
-        'baro_pressure': sensorSnapshot.baroPressure,
-        'mag_heading': sensorSnapshot.magHeading,
-      }),
+      recordId: sensorRow.id,
+      payloadJson: jsonEncode(SyncPayloads.lapSensorData(sensorRow)),
     );
   }
 
@@ -504,24 +469,26 @@ class RecordingRepository {
   }
 
   /// Load the all-time best lap duration at a circuit for this user.
+  ///
+  /// A single aggregate query — materializing every lap row (with its
+  /// trace blob) just to take a minimum would delay session start by
+  /// seconds for frequent visitors. Partial laps never count.
   Future<int?> _loadCircuitBest(String userId, String circuitId) async {
-    final sessions = await (_db.select(_db.localSessions)
-          ..where((t) =>
-              t.userId.equals(userId) & t.circuitId.equals(circuitId)))
-        .get();
+    final minDuration = _db.localLaps.durationMs.min();
+    final query = _db.selectOnly(_db.localLaps).join([
+      innerJoin(
+        _db.localSessions,
+        _db.localSessions.id.equalsExp(_db.localLaps.sessionId),
+        useColumns: false,
+      ),
+    ])
+      ..addColumns([minDuration])
+      ..where(_db.localSessions.userId.equals(userId) &
+          _db.localSessions.circuitId.equals(circuitId) &
+          _db.localLaps.isPartial.equals(false));
 
-    if (sessions.isEmpty) return null;
-
-    int? best;
-    for (final session in sessions) {
-      final laps = await _db.getSessionLaps(session.id);
-      for (final lap in laps) {
-        if (best == null || lap.durationMs < best) {
-          best = lap.durationMs;
-        }
-      }
-    }
-    return best;
+    final row = await query.getSingleOrNull();
+    return row?.read(minDuration);
   }
 
   /// Fetch weather data at the current GPS position. Waits (up to ~30s)

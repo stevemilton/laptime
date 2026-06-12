@@ -368,12 +368,11 @@ class _LapDetailScreenState extends ConsumerState<LapDetailScreen> {
 
     final units = ref.watch(unitsProvider);
     final unit = FormatUtils.speedUnit(units);
-    final factor = units == UnitSystem.imperial ? 0.621371 : 1.0;
     final speedKmh =
         (t?.hasSpeed ?? false) ? t!.speed : _traceSpeed;
-    final speed = factor == 1.0
-        ? speedKmh
-        : speedKmh.map((v) => v * factor).toList();
+    final speed = speedKmh
+        .map((v) => FormatUtils.kmhToDisplay(v, units: units))
+        .toList();
 
     return Column(
       children: [

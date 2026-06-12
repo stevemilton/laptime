@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -24,8 +26,21 @@ import '../data/sector_repository.dart';
 
 final _allCircuitsProvider = FutureProvider<List<LocalCircuit>>((ref) async {
   final db = ref.watch(databaseProvider);
-  // Pull the shared catalogue so circuits created elsewhere appear too.
-  await ref.read(circuitRepositoryProvider).refreshFromRemote();
+  final repo = ref.read(circuitRepositoryProvider);
+
+  // Offline-first: serve the cache immediately when it has anything and
+  // refresh the shared catalogue in the background (a flaky connection
+  // must not turn this tab into a spinner). Only block on the network
+  // when the cache is empty. The refresh is TTL-gated, so invalidating
+  // after a real pull cannot loop.
+  final cached = await db.getAllCircuits();
+  if (cached.isNotEmpty) {
+    unawaited(repo.refreshFromRemote().then((pulled) {
+      if (pulled) ref.invalidateSelf();
+    }));
+    return cached;
+  }
+  await repo.refreshFromRemote();
   return db.getAllCircuits();
 });
 

@@ -105,6 +105,22 @@ class SyncService {
   /// Number of queue items fetched per processing pass.
   static const int _batchSize = 50;
 
+  /// Tables that other queued rows can reference via FK. A failure (or
+  /// backoff wait) on one of these halts the pass so children enqueued
+  /// behind it don't burn their retries on FK violations. Failures on
+  /// leaf tables (likes, comments, sensor data, ...) skip and continue —
+  /// one poisoned row must not freeze unrelated sync traffic.
+  static const Set<String> _parentTables = {
+    'profiles',
+    'cars',
+    'circuits',
+    'sessions',
+    'laps',
+    'sectors',
+    'teams',
+    'crews',
+  };
+
   Timer? _periodicTimer;
   bool _isSyncing = false;
   bool _disposed = false;
@@ -180,40 +196,53 @@ class SyncService {
     _emitState(status: SyncStatus.syncing);
 
     try {
-      // Strictly FIFO: rows are enqueued parent-before-child (session before
-      // its laps, lap before its sensor data), so a failure or a
-      // backoff-delayed item must halt the pass rather than let children
-      // run ahead and burn their retries on FK violations.
+      // FIFO with dependency-aware halting: rows are enqueued
+      // parent-before-child (session before its laps, lap before its
+      // sensor data). A failed or backoff-delayed PARENT row halts the
+      // pass so children behind it don't burn retries on FK violations;
+      // failed leaf rows are skipped so one poisoned like/comment can't
+      // freeze the rest of the queue.
+      String? haltError;
       var halted = false;
+      var offset = 0;
       while (!_disposed && !halted) {
         final items = await _db.getPendingSyncItems(
-          limit: _batchSize,
+          limit: _batchSize + offset,
           maxRetries: maxRetries,
         );
-        if (items.isEmpty) break;
+        if (items.length <= offset) break;
 
         var processedAny = false;
-        for (final item in items) {
+        for (final item in items.skip(offset)) {
           if (_disposed) break;
+          final isParent = _parentTables.contains(item.targetTable);
           if (!_isEligibleForRetry(item)) {
-            // Head of queue is waiting out its backoff — stop the pass.
-            halted = true;
-            break;
+            if (isParent) {
+              halted = true;
+              break;
+            }
+            offset++; // leaf in backoff: leave it, keep going
+            continue;
           }
-          final ok = await _processSingleItem(item);
+          final error = await _processSingleItem(item);
           processedAny = true;
-          if (!ok) {
-            halted = true;
-            break;
+          if (error != null) {
+            if (isParent) {
+              haltError = '${item.targetTable}: $error';
+              halted = true;
+              break;
+            }
+            offset++; // failed leaf stays for its backoff retry
           }
         }
-        if (!processedAny) break;
+        if (!processedAny && !halted) break;
       }
 
       _emitState(
         status: SyncStatus.idle,
         pendingCount: await _db.pendingSyncCount(maxRetries: maxRetries),
         deadLetterCount: await _db.deadLetterCount(maxRetries: maxRetries),
+        lastError: haltError,
       );
     } catch (e) {
       debugPrint('SyncService: queue processing error: $e');
@@ -245,8 +274,9 @@ class SyncService {
     return true;
   }
 
-  /// Process a single sync queue item. Returns true on success.
-  Future<bool> _processSingleItem(LocalSyncQueueData item) async {
+  /// Process a single sync queue item. Returns null on success, or the
+  /// error message on failure.
+  Future<String?> _processSingleItem(LocalSyncQueueData item) async {
     try {
       if (item.targetTable == 'lap_sensor_data' &&
           item.operation != 'delete') {
@@ -273,14 +303,14 @@ class SyncService {
       }
 
       await _db.markSyncCompleted(item.id);
-      return true;
+      return null;
     } catch (e) {
       debugPrint(
         'SyncService: failed to sync item ${item.id} '
         '(${item.targetTable}/${item.operation}): $e',
       );
       await _db.markSyncFailed(item.id, e.toString());
-      return false;
+      return e.toString();
     }
   }
 
@@ -360,7 +390,14 @@ class SyncService {
     switch (operation) {
       case 'insert':
       case 'update':
-        await _supabase.from(table).upsert(payload);
+        if (table == 'circuits') {
+          // Reconciliation re-enqueues every locally cached circuit,
+          // including catalogue rows that already exist remotely and
+          // aren't ours to update — insert-or-skip instead of upsert.
+          await _supabase.from(table).upsert(payload, ignoreDuplicates: true);
+        } else {
+          await _supabase.from(table).upsert(payload);
+        }
       case 'delete':
         // Composite-PK tables don't have a single 'id' column.
         // Use payload fields for the delete filter instead.
@@ -383,6 +420,13 @@ class SyncService {
             query = query.eq(col, value);
           }
           await query;
+        } else if (table == 'lap_sensor_data') {
+          // Large records were uploaded as chunk rows carrying parent_id;
+          // an id-only delete would orphan them.
+          await _supabase
+              .from(table)
+              .delete()
+              .or('id.eq.$recordId,parent_id.eq.$recordId');
         } else {
           await _supabase.from(table).delete().eq('id', recordId);
         }
@@ -472,6 +516,7 @@ class SyncService {
   void _emitState({
     SyncStatus? status,
     int? pendingCount,
+    int? deadLetterCount,
     String? lastError,
   }) {
     if (_disposed) return;
@@ -479,6 +524,7 @@ class SyncService {
     _currentState = _currentState.copyWith(
       status: status,
       pendingCount: pendingCount,
+      deadLetterCount: deadLetterCount,
       lastError: lastError,
     );
 

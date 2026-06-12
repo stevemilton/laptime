@@ -311,13 +311,15 @@ class ProfileScreen extends ConsumerWidget {
   }
 
   /// Confirm sign-out. Signing out wipes all local data, so warn loudly
-  /// when there are still items waiting to sync (they would be lost).
+  /// when there are still items waiting to sync (they would be lost) —
+  /// including dead-lettered items, which are unsynced too.
   Future<void> _confirmSignOut(BuildContext context, WidgetRef ref) async {
-    final pendingCount = ref.read(pendingSyncCountProvider);
-    final message = pendingCount > 0
-        ? 'You have $pendingCount item${pendingCount == 1 ? '' : 's'} waiting '
-            'to sync. Signing out removes all local data from this device, '
-            'so this unsynced data will be lost. Sign out anyway?'
+    final unsyncedCount = ref.read(pendingSyncCountProvider) +
+        ref.read(deadLetterCountProvider);
+    final message = unsyncedCount > 0
+        ? 'You have $unsyncedCount item${unsyncedCount == 1 ? '' : 's'} that '
+            'haven\'t synced. Signing out removes all local data from this '
+            'device, so this unsynced data will be lost. Sign out anyway?'
         : 'Signing out removes all local data from this device. Synced data '
             'stays safely in your account.';
 

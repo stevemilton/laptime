@@ -51,7 +51,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration {
@@ -90,6 +90,10 @@ class AppDatabase extends _$AppDatabase {
           // v5: Social feed — likes and comments
           await m.createTable(localSessionLikes);
           await m.createTable(localSessionComments);
+        }
+        if (from < 6) {
+          // v6: Mark incomplete laps so PBs/sector scoring can skip them
+          await m.addColumn(localLaps, localLaps.isPartial);
         }
       },
     );
@@ -168,12 +172,22 @@ class AppDatabase extends _$AppDatabase {
     ));
   }
 
-  /// Permanently remove dead-lettered items (used by reconciliation, which
-  /// re-enqueues fresh payloads built from the local rows).
-  Future<void> purgeDeadLetters({int maxRetries = 5}) {
-    return (delete(localSyncQueue)
-          ..where((t) => t.retryCount.isBiggerOrEqualValue(maxRetries)))
+  /// Permanently remove dead-lettered insert/update items (used by
+  /// reconciliation, which re-enqueues fresh payloads built from the local
+  /// rows). Dead-lettered DELETES are reset for retry instead — the local
+  /// row is gone, so a purged delete could never be rebuilt.
+  Future<void> purgeDeadLetters({int maxRetries = 5}) async {
+    await (delete(localSyncQueue)
+          ..where((t) =>
+              t.retryCount.isBiggerOrEqualValue(maxRetries) &
+              t.operation.equals('delete').not()))
         .go();
+    await (update(localSyncQueue)
+          ..where((t) => t.retryCount.isBiggerOrEqualValue(maxRetries)))
+        .write(const LocalSyncQueueCompanion(
+      retryCount: Value(0),
+      errorMessage: Value(null),
+    ));
   }
 
   Future<void> markSyncCompleted(int queueId) {

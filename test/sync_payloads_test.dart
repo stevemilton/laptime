@@ -48,6 +48,7 @@ void main() {
       lapNumber: 1,
       durationMs: 92000,
       isPersonalBest: false,
+      isPartial: false,
       createdAt: now,
       traceJson: '[[-1.0,52.0,0,30.5]]',
     ));
@@ -58,6 +59,7 @@ void main() {
       'lap_number',
       'duration_ms',
       'is_personal_best',
+      'is_partial',
       'trace_json',
     });
     expect(payload['trace_json'], isA<List<dynamic>>());

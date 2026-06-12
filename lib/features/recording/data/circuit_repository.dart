@@ -32,33 +32,53 @@ class CircuitRepository {
   final SupabaseClient _supabase;
   final _uuid = const Uuid();
 
+  /// Last successful catalogue pull (shared across instances). Several
+  /// screens trigger refreshes; without a freshness window each visit
+  /// would re-download the whole table.
+  static DateTime? _lastRefresh;
+  static const _refreshTtl = Duration(minutes: 5);
+
   /// Pull the circuit catalogue from Supabase into the local cache.
-  /// Safe to call offline (keeps the existing cache).
-  Future<void> refreshFromRemote() async {
+  /// Safe to call offline (keeps the existing cache). No-op while the
+  /// last successful pull is fresher than [_refreshTtl] unless [force].
+  /// Returns true when a network pull actually updated the cache.
+  Future<bool> refreshFromRemote({bool force = false}) async {
+    if (!force &&
+        _lastRefresh != null &&
+        DateTime.now().difference(_lastRefresh!) < _refreshTtl) {
+      return false;
+    }
     try {
       final rows = await _supabase.from('circuits').select(
           'id, name, country, gps_lat, gps_lng, start_finish_line_json, length_m');
 
-      for (final row in rows as List) {
-        final map = row as Map<String, dynamic>;
-        await _db.into(_db.localCircuits).insertOnConflictUpdate(
-              LocalCircuitsCompanion.insert(
-                id: map['id'] as String,
-                name: map['name'] as String,
-                country: Value((map['country'] as String?) ?? 'GB'),
-                gpsLat: (map['gps_lat'] as num).toDouble(),
-                gpsLng: (map['gps_lng'] as num).toDouble(),
-                startFinishLineJson: Value(
-                  map['start_finish_line_json'] != null
-                      ? jsonEncode(map['start_finish_line_json'])
-                      : null,
-                ),
-                lengthM: Value((map['length_m'] as num?)?.toInt()),
+      await _db.batch((batch) {
+        for (final row in rows as List) {
+          final map = row as Map<String, dynamic>;
+          batch.insert(
+            _db.localCircuits,
+            LocalCircuitsCompanion.insert(
+              id: map['id'] as String,
+              name: map['name'] as String,
+              country: Value((map['country'] as String?) ?? 'GB'),
+              gpsLat: (map['gps_lat'] as num).toDouble(),
+              gpsLng: (map['gps_lng'] as num).toDouble(),
+              startFinishLineJson: Value(
+                map['start_finish_line_json'] != null
+                    ? jsonEncode(map['start_finish_line_json'])
+                    : null,
               ),
-            );
-      }
+              lengthM: Value((map['length_m'] as num?)?.toInt()),
+            ),
+            mode: InsertMode.insertOrReplace,
+          );
+        }
+      });
+      _lastRefresh = DateTime.now();
+      return true;
     } catch (e) {
       debugPrint('CircuitRepository: remote refresh failed: $e');
+      return false;
     }
   }
 

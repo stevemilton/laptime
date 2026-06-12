@@ -12,9 +12,11 @@
 
 -- D1: laps are synced with a JSON trace (trace format v2:
 -- [[lng, lat, t_ms, speed_mps], ...]). The PostGIS column stays for
--- future geo queries but the client writes JSONB.
+-- future geo queries but the client writes JSONB. is_partial marks
+-- incomplete laps (excluded from PBs and sector scoring).
 ALTER TABLE public.laps
-  ADD COLUMN IF NOT EXISTS trace_json JSONB;
+  ADD COLUMN IF NOT EXISTS trace_json JSONB,
+  ADD COLUMN IF NOT EXISTS is_partial BOOLEAN DEFAULT false;
 
 -- D5: session edits include the user-entered circuit name.
 ALTER TABLE public.sessions
@@ -26,9 +28,12 @@ ALTER TABLE public.lap_sensor_data
   ADD COLUMN IF NOT EXISTS chunk_index INTEGER,
   ADD COLUMN IF NOT EXISTS chunk_total INTEGER,
   ADD COLUMN IF NOT EXISTS parent_id UUID;
+-- NOT a partial index: the client upserts chunks with
+-- ON CONFLICT (parent_id, chunk_index), and Postgres cannot infer a
+-- partial unique index from a bare conflict target. NULL parent_ids
+-- (whole rows) never conflict because NULLs are distinct.
 CREATE UNIQUE INDEX IF NOT EXISTS lap_sensor_data_parent_chunk
-  ON public.lap_sensor_data (parent_id, chunk_index)
-  WHERE parent_id IS NOT NULL;
+  ON public.lap_sensor_data (parent_id, chunk_index);
 -- Re-uploads of the same lap's sensor data must not duplicate rows.
 CREATE UNIQUE INDEX IF NOT EXISTS lap_sensor_data_lap_whole
   ON public.lap_sensor_data (lap_id)

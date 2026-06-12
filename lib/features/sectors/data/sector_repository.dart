@@ -206,8 +206,17 @@ class SectorRepository {
     String sectorId, {
     String? carClass,
   }) async {
-    var rows = await _fetchRemoteLeaderboardRows(sectorId);
-    rows ??= await _localLeaderboardRows(sectorId);
+    // Remote rows show other drivers; local rows include this device's
+    // times that haven't synced yet. Merge both (deduped by lap) so a
+    // freshly set time doesn't vanish from the board while it uploads.
+    final remote = await _fetchRemoteLeaderboardRows(sectorId);
+    final local = await _localLeaderboardRows(sectorId);
+    final byLap = <String, _LeaderboardRow>{
+      for (final row in local) row.lapId: row,
+      // Remote wins on conflict: it carries the joined profile/car data.
+      for (final row in remote ?? const <_LeaderboardRow>[]) row.lapId: row,
+    };
+    var rows = byLap.values.toList();
     if (rows.isEmpty) return [];
 
     // Filter by car class BEFORE picking best-per-user, so a driver's
@@ -287,15 +296,26 @@ class SectorRepository {
           ..where((t) => t.sectorId.equals(sectorId))
           ..orderBy([(t) => OrderingTerm.asc(t.durationMs)]))
         .get();
+    if (sectorTimes.isEmpty) return [];
+
+    // Memoize lookups: the same user/session/car repeats across rows, and
+    // a per-row await chain would mean thousands of queries for a big
+    // sector before the dedup throws most of them away.
+    final profiles = <String, LocalProfile?>{};
+    final sessions = <String, LocalSession?>{};
+    final cars = <String, LocalCar?>{};
 
     final rows = <_LeaderboardRow>[];
     for (final st in sectorTimes) {
-      final profile = await _db.getProfile(st.userId);
-      final session = await _db.getSession(st.sessionId);
+      final profile = profiles[st.userId] ??=
+          await _db.getProfile(st.userId);
+      final session = sessions[st.sessionId] ??=
+          await _db.getSession(st.sessionId);
       LocalCar? car;
-      if (session?.carId != null) {
-        car = await (_db.select(_db.localCars)
-              ..where((t) => t.id.equals(session!.carId!)))
+      final carId = session?.carId;
+      if (carId != null) {
+        car = cars[carId] ??= await (_db.select(_db.localCars)
+              ..where((t) => t.id.equals(carId)))
             .getSingleOrNull();
       }
       rows.add(_LeaderboardRow(
@@ -333,77 +353,40 @@ class SectorRepository {
           ..where((t) => t.id.equals(sectorId)))
         .getSingleOrNull();
     if (sector == null) return null;
-
-    final startPoint = _parsePoint(sector.startPointJson);
-    final endPoint = _parsePoint(sector.endPointJson);
-    if (startPoint == null || endPoint == null) return null;
+    final gates = _gatesFor(sector);
+    if (gates == null) return null;
 
     final lap = await (_db.select(_db.localLaps)
           ..where((t) => t.id.equals(lapId)))
         .getSingleOrNull();
-    if (lap == null || lap.traceJson == null) return null;
-
-    var trace = TraceCodec.decode(lap.traceJson);
-    if (trace.length < 2) return null;
-    // Legacy traces have no timestamps; synthesise them from the lap
-    // duration, allocated proportionally to distance.
-    trace = TraceCodec.withTimestamps(trace, lap.durationMs);
-    if (!TraceCodec.hasTimestamps(trace)) return null;
-
-    final startCrossing = _findGateCrossing(
-      trace,
-      startPoint['lat']!,
-      startPoint['lng']!,
-    );
-    if (startCrossing == null) return null;
-
-    // The end gate must be crossed AFTER the start gate.
-    final endCrossing = _findGateCrossing(
-      trace,
-      endPoint['lat']!,
-      endPoint['lng']!,
-      fromIndex: startCrossing.segmentIndex + 1,
-    );
-    if (endCrossing == null) return null;
-
-    final durationMs =
-        (endCrossing.timestampMs - startCrossing.timestampMs).round();
-    if (durationMs <= 0) return null;
+    final trace = _decodeLapTrace(lap);
+    if (lap == null || trace == null) return null;
 
     final session = await _db.getSession(lap.sessionId);
     if (session == null) return null;
 
-    final id = _uuid.v4();
-    await _db.into(_db.localSectorTimes).insert(
-      LocalSectorTimesCompanion.insert(
-        id: id,
-        sectorId: sectorId,
-        lapId: lapId,
-        sessionId: lap.sessionId,
-        userId: session.userId,
-        durationMs: durationMs,
-      ),
+    return _computeAndStore(
+      gates: gates,
+      lap: lap,
+      trace: trace,
+      userId: session.userId,
     );
-
-    final stored = await (_db.select(_db.localSectorTimes)
-          ..where((t) => t.id.equals(id)))
-        .getSingle();
-    await _db.enqueueSync(
-      targetTable: 'sector_times',
-      operation: 'insert',
-      recordId: id,
-      payloadJson: jsonEncode(SyncPayloads.sectorTime(stored)),
-    );
-
-    return durationMs;
   }
 
   /// Compute sector times for all laps at the sector's circuit.
+  ///
+  /// Batched: gate points are parsed once, each lap trace is decoded once,
+  /// and already-scored pairs are prefetched in one query — per-pair
+  /// round-trips would stall the UI for seconds at circuits with history.
   Future<void> persistSectorTimesForCircuit(String sectorId) async {
     final sector = await (_db.select(_db.localSectors)
           ..where((t) => t.id.equals(sectorId)))
         .getSingleOrNull();
     if (sector == null) return;
+    final gates = _gatesFor(sector);
+    if (gates == null) return;
+
+    final scoredLapIds = await _scoredLapIds(sectorId);
 
     final sessions = await (_db.select(_db.localSessions)
           ..where((t) => t.circuitId.equals(sector.circuitId)))
@@ -412,7 +395,15 @@ class SectorRepository {
     for (final session in sessions) {
       final laps = await _db.getSessionLaps(session.id);
       for (final lap in laps) {
-        await saveSectorTime(sectorId, lap.id);
+        if (scoredLapIds.contains(lap.id)) continue;
+        final trace = _decodeLapTrace(lap);
+        if (trace == null) continue;
+        await _computeAndStore(
+          gates: gates,
+          lap: lap,
+          trace: trace,
+          userId: session.userId,
+        );
       }
     }
   }
@@ -429,12 +420,118 @@ class SectorRepository {
     final sectors = await getCircuitSectors(circuitId);
     if (sectors.isEmpty) return;
 
+    final gates = [
+      for (final sector in sectors)
+        if (_gatesFor(sector) case final g?) g,
+    ];
+
     final laps = await _db.getSessionLaps(sessionId);
-    for (final sector in sectors) {
-      for (final lap in laps) {
-        await saveSectorTime(sector.id, lap.id);
+    for (final lap in laps) {
+      // Decode each trace exactly once, score against every sector.
+      final trace = _decodeLapTrace(lap);
+      if (trace == null) continue;
+      for (final gate in gates) {
+        await _computeAndStore(
+          gates: gate,
+          lap: lap,
+          trace: trace,
+          userId: session!.userId,
+          skipExistingCheck: false,
+        );
       }
     }
+  }
+
+  /// Parse a sector's gate points once. Null when the sector is unusable.
+  _SectorGates? _gatesFor(LocalSector sector) {
+    final start = _parsePoint(sector.startPointJson);
+    final end = _parsePoint(sector.endPointJson);
+    if (start == null || end == null) return null;
+    return _SectorGates(sectorId: sector.id, start: start, end: end);
+  }
+
+  /// Decode + timestamp-upgrade a lap's trace, or null when unusable.
+  /// Partial laps (incomplete in-lap segments) must never post times.
+  List<TracePoint>? _decodeLapTrace(LocalLap? lap) {
+    if (lap == null || lap.traceJson == null || lap.isPartial) return null;
+    var trace = TraceCodec.decode(lap.traceJson);
+    if (trace.length < 2) return null;
+    // Legacy traces have no timestamps; synthesise them from the lap
+    // duration, allocated proportionally to distance.
+    trace = TraceCodec.withTimestamps(trace, lap.durationMs);
+    if (!TraceCodec.hasTimestamps(trace)) return null;
+    return trace;
+  }
+
+  /// Lap ids already scored for a sector, in one query.
+  Future<Set<String>> _scoredLapIds(String sectorId) async {
+    final rows = await (_db.selectOnly(_db.localSectorTimes)
+          ..addColumns([_db.localSectorTimes.lapId])
+          ..where(_db.localSectorTimes.sectorId.equals(sectorId)))
+        .get();
+    return {
+      for (final row in rows) row.read(_db.localSectorTimes.lapId)!,
+    };
+  }
+
+  /// Locate both gate crossings in [trace], store the sector time, and
+  /// enqueue it for sync. Returns the duration or null when the lap
+  /// doesn't pass through both gates in order.
+  Future<int?> _computeAndStore({
+    required _SectorGates gates,
+    required LocalLap lap,
+    required List<TracePoint> trace,
+    required String userId,
+    bool skipExistingCheck = true,
+  }) async {
+    if (!skipExistingCheck) {
+      final existing = await (_db.select(_db.localSectorTimes)
+            ..where((t) =>
+                t.sectorId.equals(gates.sectorId) & t.lapId.equals(lap.id))
+            ..limit(1))
+          .getSingleOrNull();
+      if (existing != null) return existing.durationMs;
+    }
+
+    final startCrossing = _findGateCrossing(
+      trace,
+      gates.start['lat']!,
+      gates.start['lng']!,
+    );
+    if (startCrossing == null) return null;
+
+    // The end gate must be crossed AFTER the start gate.
+    final endCrossing = _findGateCrossing(
+      trace,
+      gates.end['lat']!,
+      gates.end['lng']!,
+      fromIndex: startCrossing.segmentIndex + 1,
+    );
+    if (endCrossing == null) return null;
+
+    final durationMs =
+        (endCrossing.timestampMs - startCrossing.timestampMs).round();
+    if (durationMs <= 0) return null;
+
+    final stored = LocalSectorTime(
+      id: _uuid.v4(),
+      sectorId: gates.sectorId,
+      lapId: lap.id,
+      sessionId: lap.sessionId,
+      userId: userId,
+      durationMs: durationMs,
+      computedAt: DateTime.now(),
+    );
+    await _db.into(_db.localSectorTimes).insert(stored);
+
+    await _db.enqueueSync(
+      targetTable: 'sector_times',
+      operation: 'insert',
+      recordId: stored.id,
+      payloadJson: jsonEncode(SyncPayloads.sectorTime(stored)),
+    );
+
+    return durationMs;
   }
 
   // ── Private helpers ──
@@ -506,6 +603,19 @@ class SectorRepository {
       timestampMs: tA + bestFraction * (tB - tA),
     );
   }
+}
+
+/// A sector's parsed gate points (parsed once per scoring run).
+class _SectorGates {
+  const _SectorGates({
+    required this.sectorId,
+    required this.start,
+    required this.end,
+  });
+
+  final String sectorId;
+  final Map<String, double> start;
+  final Map<String, double> end;
 }
 
 /// Result of locating a gate pass within a trace.

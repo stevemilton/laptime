@@ -29,6 +29,11 @@ class ReconciliationService {
 
   /// Enqueue every locally stored record owned by [userId], in
   /// parent-before-child order, then trigger a sync pass.
+  ///
+  /// All reads happen up front and all queue writes go through one batch
+  /// in a single transaction — this runs at app startup after the v2
+  /// update, where thousands of per-row statements would stall first
+  /// launch for seconds.
   Future<void> resyncAll(String userId) async {
     if (_running) return;
     _running = true;
@@ -37,34 +42,58 @@ class ReconciliationService {
       // superseded by the fresh full-row payloads enqueued below.
       await _db.purgeDeadLetters();
 
+      // (table, recordId) pairs already pending, fetched once.
+      final pendingRows = await (_db.select(_db.localSyncQueue)
+            ..where((t) => t.operation.equals('insert')))
+          .get();
+      final pendingByKey = {
+        for (final row in pendingRows) '${row.targetTable}|${row.recordId}': row,
+      };
+
+      // Ordered (table, recordId, payload) triples: parents before children.
+      final entries = <(String, String, Map<String, dynamic>)>[];
+
       final profile = await _db.getProfile(userId);
       if (profile != null) {
-        await _enqueue('profiles', profile.id, SyncPayloads.profile(profile));
+        entries.add(('profiles', profile.id, SyncPayloads.profile(profile)));
       }
 
       final cars = await (_db.select(_db.localCars)
             ..where((t) => t.userId.equals(userId)))
           .get();
       for (final car in cars) {
-        await _enqueue('cars', car.id, SyncPayloads.car(car));
+        entries.add(('cars', car.id, SyncPayloads.car(car)));
+      }
+
+      // Circuits before the sessions that reference them. The cache can't
+      // tell user-created circuits from catalogue ones, so all are
+      // re-enqueued; the sync engine inserts circuits with
+      // ignoreDuplicates, making catalogue rows a no-op.
+      final circuits = await _db.getAllCircuits();
+      for (final circuit in circuits) {
+        entries.add((
+          'circuits',
+          circuit.id,
+          SyncPayloads.circuit(circuit, createdBy: userId),
+        ));
       }
 
       final sessions = await (_db.select(_db.localSessions)
             ..where((t) => t.userId.equals(userId)))
           .get();
       for (final session in sessions) {
-        await _enqueue('sessions', session.id, SyncPayloads.session(session));
+        entries.add(('sessions', session.id, SyncPayloads.session(session)));
 
         final laps = await _db.getSessionLaps(session.id);
         for (final lap in laps) {
-          await _enqueue('laps', lap.id, SyncPayloads.lap(lap));
+          entries.add(('laps', lap.id, SyncPayloads.lap(lap)));
 
           final sensor = await (_db.select(_db.localLapSensorData)
                 ..where((t) => t.lapId.equals(lap.id)))
               .get();
           for (final row in sensor) {
-            await _enqueue(
-                'lap_sensor_data', row.id, SyncPayloads.lapSensorData(row));
+            entries.add(
+                ('lap_sensor_data', row.id, SyncPayloads.lapSensorData(row)));
           }
         }
       }
@@ -73,54 +102,50 @@ class ReconciliationService {
             ..where((t) => t.createdBy.equals(userId)))
           .get();
       for (final sector in sectors) {
-        await _enqueue('sectors', sector.id, SyncPayloads.sector(sector));
+        entries.add(('sectors', sector.id, SyncPayloads.sector(sector)));
       }
 
       final sectorTimes = await (_db.select(_db.localSectorTimes)
             ..where((t) => t.userId.equals(userId)))
           .get();
       for (final time in sectorTimes) {
-        await _enqueue(
-            'sector_times', time.id, SyncPayloads.sectorTime(time));
+        entries.add(
+            ('sector_times', time.id, SyncPayloads.sectorTime(time)));
       }
 
-      debugPrint('ReconciliationService: resync enqueued for $userId');
+      await _db.batch((batch) {
+        for (final (table, recordId, payload) in entries) {
+          final existing = pendingByKey['$table|$recordId'];
+          if (existing != null) {
+            // Refresh the stale pending payload instead of duplicating it.
+            batch.update(
+              _db.localSyncQueue,
+              LocalSyncQueueCompanion(
+                payloadJson: Value(jsonEncode(payload)),
+                retryCount: const Value(0),
+                errorMessage: const Value(null),
+              ),
+              where: (t) => t.id.equals(existing.id),
+            );
+          } else {
+            batch.insert(
+              _db.localSyncQueue,
+              LocalSyncQueueCompanion.insert(
+                targetTable: table,
+                operation: 'insert',
+                recordId: recordId,
+                payloadJson: jsonEncode(payload),
+              ),
+            );
+          }
+        }
+      });
+
+      debugPrint(
+          'ReconciliationService: ${entries.length} items enqueued for $userId');
       _sync.requestSync();
     } finally {
       _running = false;
     }
-  }
-
-  Future<void> _enqueue(
-    String table,
-    String recordId,
-    Map<String, dynamic> payload,
-  ) async {
-    // Skip if an identical pending item already exists (e.g. resync tapped
-    // twice before the queue drains).
-    final existing = await (_db.select(_db.localSyncQueue)
-          ..where((t) =>
-              t.targetTable.equals(table) &
-              t.recordId.equals(recordId) &
-              t.operation.equals('insert'))
-          ..limit(1))
-        .getSingleOrNull();
-    if (existing != null) {
-      await (_db.update(_db.localSyncQueue)
-            ..where((t) => t.id.equals(existing.id)))
-          .write(LocalSyncQueueCompanion(
-        payloadJson: Value(jsonEncode(payload)),
-        retryCount: const Value(0),
-        errorMessage: const Value(null),
-      ));
-      return;
-    }
-
-    await _db.enqueueSync(
-      targetTable: table,
-      operation: 'insert',
-      recordId: recordId,
-      payloadJson: jsonEncode(payload),
-    );
   }
 }

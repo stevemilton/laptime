@@ -69,6 +69,12 @@ abstract final class FormatUtils {
     return units == UnitSystem.imperial ? speedMps * 2.236936 : speedMps * 3.6;
   }
 
+  /// Converts a km/h value to the display unit (used by telemetry charts,
+  /// whose channels are stored in km/h).
+  static double kmhToDisplay(double kmh, {UnitSystem units = UnitSystem.metric}) {
+    return units == UnitSystem.imperial ? kmh / 1.609344 : kmh;
+  }
+
   /// Unit label for speeds ("km/h" or "mph").
   static String speedUnit(UnitSystem units) {
     return units == UnitSystem.imperial ? 'mph' : 'km/h';

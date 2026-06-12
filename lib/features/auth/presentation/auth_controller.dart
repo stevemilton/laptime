@@ -131,14 +131,25 @@ class AuthController extends StateNotifier<AsyncValue<void>> {
   /// The local database belongs to the signed-out user; leaving it on the
   /// device would expose it to the next account and push the previous
   /// user's sync queue under the wrong JWT.
+  ///
+  /// Order matters: the sign-out call comes FIRST. If it fails (offline,
+  /// server error) the user stays signed in and their local data is
+  /// untouched — wiping before a failed sign-out would destroy unsynced
+  /// recordings while leaving the session active.
   Future<void> signOut() async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      final db = _ref.read(databaseProvider);
-      await db.wipeAllData();
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.clear();
       await _repo.signOut();
+      try {
+        final db = _ref.read(databaseProvider);
+        await db.wipeAllData();
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.clear();
+      } catch (_) {
+        // Already signed out; a failed wipe must not surface as a
+        // sign-out error. If stale rows ever survive, RLS rejects them
+        // under another account's JWT.
+      }
     });
   }
 }

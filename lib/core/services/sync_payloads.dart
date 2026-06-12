@@ -34,6 +34,7 @@ abstract final class SyncPayloads {
         'lap_number': lap.lapNumber,
         'duration_ms': lap.durationMs,
         'is_personal_best': lap.isPersonalBest,
+        'is_partial': lap.isPartial,
         'trace_json': tryDecode(lap.traceJson),
       };
 

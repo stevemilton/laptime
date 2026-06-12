@@ -64,8 +64,15 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   });
 
   // Re-run redirects when disclaimer acceptance resolves or changes.
+  // Errors resolve to "not accepted" (the legal gate must fail safe), so
+  // they must notify too — comparing valueOrNull alone would miss them.
+  bool? resolveAcceptance(AsyncValue<bool>? value) {
+    if (value == null || value.isLoading) return null;
+    return value.valueOrNull ?? false;
+  }
+
   ref.listen(hasAcceptedDisclaimerProvider, (previous, next) {
-    if (previous?.valueOrNull != next.valueOrNull) {
+    if (resolveAcceptance(previous) != resolveAcceptance(next)) {
       refresh.notify();
     }
   });
@@ -91,11 +98,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         return onLogin ? null : '/login';
       }
 
-      // Disclaimer state still loading (or errored): no redirect rather
-      // than flashing the disclaimer screen or trapping the user on it.
-      final hasAccepted =
-          ref.read(hasAcceptedDisclaimerProvider).valueOrNull;
-      if (hasAccepted == null) return null;
+      // Disclaimer state still loading: no redirect (avoids flashing the
+      // disclaimer screen during startup). An ERROR must not bypass the
+      // legal gate — treat it as not accepted; re-accepting rewrites the
+      // local record.
+      final disclaimerState = ref.read(hasAcceptedDisclaimerProvider);
+      if (disclaimerState.isLoading) return null;
+      final hasAccepted = disclaimerState.valueOrNull ?? false;
 
       // Authenticated but on login -> redirect away
       if (onLogin) {

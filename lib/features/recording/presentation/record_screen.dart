@@ -99,8 +99,13 @@ class _RecordScreenState extends ConsumerState<RecordScreen>
     setState(() => _circuitDetecting = true);
     try {
       final repo = ref.read(circuitRepositoryProvider);
-      await repo.refreshFromRemote();
-      final fix = await _locationService.getCurrentPosition();
+      // Catalogue refresh and GPS fix are independent — run them together
+      // so a slow connection doesn't delay detection past session start.
+      final results = await Future.wait<dynamic>([
+        repo.refreshFromRemote(),
+        _locationService.getCurrentPosition(),
+      ]);
+      final fix = results[1] as GpsPoint?;
       if (fix == null) return;
       _lastFix = fix;
       final nearest =
@@ -379,6 +384,7 @@ class _RecordScreenState extends ConsumerState<RecordScreen>
 
   Future<void> _pickCircuit() async {
     final fix = _lastFix ?? await _locationService.getCurrentPosition();
+    if (!mounted) return;
     if (fix == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Waiting for a GPS fix…')),
