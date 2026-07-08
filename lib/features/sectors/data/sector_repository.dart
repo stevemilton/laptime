@@ -408,6 +408,16 @@ class SectorRepository {
     }
   }
 
+  /// Score any unscored laps at a circuit against all of its sectors.
+  /// Used after a start/finish line re-score rebuilds laps (the rebuilt
+  /// laps have fresh ids, so the idempotency guard scores exactly those).
+  Future<void> rescoreCircuitSectorTimes(String circuitId) async {
+    final sectors = await getCircuitSectors(circuitId);
+    for (final sector in sectors) {
+      await persistSectorTimesForCircuit(sector.id);
+    }
+  }
+
   /// Score every lap of a freshly recorded session against all of its
   /// circuit's sectors (including other users' sectors, refreshed first).
   /// Called from the recording flow after a session is saved.

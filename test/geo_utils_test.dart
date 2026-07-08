@@ -67,4 +67,24 @@ void main() {
       expect(d, closeTo(111320, 200));
     });
   });
+
+  group('extendLineSegment', () {
+    test('extends both endpoints along the line direction', () {
+      // North-south segment at the equator: 0.0002 deg lat ≈ 22.26 m long.
+      final g = GeoUtils.extendLineSegment(-0.0001, 0, 0.0001, 0, 10);
+      // Each endpoint should move ~10 m (≈ 0.0000898 deg) outward.
+      expect(g.lat1, closeTo(-0.0001 - 0.0000898, 5e-6));
+      expect(g.lat2, closeTo(0.0001 + 0.0000898, 5e-6));
+      expect(g.lng1, closeTo(0, 1e-9));
+      expect(g.lng2, closeTo(0, 1e-9));
+    });
+
+    test('degenerate zero-length segment is returned unchanged', () {
+      final g = GeoUtils.extendLineSegment(0.5, 0.5, 0.5, 0.5, 10);
+      expect(g.lat1, 0.5);
+      expect(g.lng1, 0.5);
+      expect(g.lat2, 0.5);
+      expect(g.lng2, 0.5);
+    });
+  });
 }

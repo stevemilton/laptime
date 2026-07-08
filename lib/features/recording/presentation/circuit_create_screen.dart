@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,27 +8,39 @@ import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../../core/database/app_database.dart';
 import '../../../core/providers/supabase_provider.dart';
+import '../../../core/providers/sync_provider.dart';
+import '../../../core/services/lap_maintenance_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../sectors/data/sector_repository.dart';
 import '../data/circuit_repository.dart';
 
-/// Screen for defining a new circuit: name it and drop the two endpoints
+/// Screen for defining a circuit: name it and drop the two endpoints
 /// of the start/finish line on the map.
 ///
 /// The line should span the track width at the start/finish point —
 /// automatic lap detection triggers when the GPS trace crosses it.
-/// Pops with the created [LocalCircuit] on save.
+/// Pops with the created/updated [LocalCircuit] on save.
+///
+/// When [editCircuit] is set the screen edits that circuit instead of
+/// creating one; on save, all of the user's stored sessions at the
+/// circuit are re-scored against the moved line.
 class CircuitCreateScreen extends ConsumerStatefulWidget {
   const CircuitCreateScreen({
     super.key,
     required this.initialLat,
     required this.initialLng,
+    this.editCircuit,
   });
 
-  /// Map starting position (the user's current location).
+  /// Map starting position (the user's current location, or the circuit
+  /// position in edit mode).
   final double initialLat;
   final double initialLng;
+
+  /// When set, edit this circuit's name/line instead of creating one.
+  final LocalCircuit? editCircuit;
 
   @override
   ConsumerState<CircuitCreateScreen> createState() =>
@@ -38,6 +52,31 @@ class _CircuitCreateScreenState extends ConsumerState<CircuitCreateScreen> {
   LatLng? _lineStart;
   LatLng? _lineEnd;
   bool _saving = false;
+
+  bool get _isEdit => widget.editCircuit != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final circuit = widget.editCircuit;
+    if (circuit != null) {
+      _nameController.text = circuit.name;
+      final lineJson = circuit.startFinishLineJson;
+      if (lineJson != null && lineJson.isNotEmpty) {
+        try {
+          final line = jsonDecode(lineJson) as List;
+          final p1 = line[0] as List;
+          final p2 = line[1] as List;
+          _lineStart = LatLng(
+              (p1[0] as num).toDouble(), (p1[1] as num).toDouble());
+          _lineEnd = LatLng(
+              (p2[0] as num).toDouble(), (p2[1] as num).toDouble());
+        } catch (_) {
+          // Malformed line: start from scratch.
+        }
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -68,16 +107,37 @@ class _CircuitCreateScreenState extends ConsumerState<CircuitCreateScreen> {
     try {
       final start = _lineStart!;
       final end = _lineEnd!;
-      final circuit = await ref.read(circuitRepositoryProvider).createCircuit(
-        userId: user.id,
-        name: name,
-        gpsLat: (start.latitude + end.latitude) / 2,
-        gpsLng: (start.longitude + end.longitude) / 2,
-        startFinishLine: [
-          [start.latitude, start.longitude],
-          [end.latitude, end.longitude],
-        ],
-      );
+      final line = [
+        [start.latitude, start.longitude],
+        [end.latitude, end.longitude],
+      ];
+
+      final LocalCircuit? circuit;
+      if (_isEdit) {
+        final circuitId = widget.editCircuit!.id;
+        circuit = await ref.read(circuitRepositoryProvider).updateCircuit(
+              circuitId: circuitId,
+              name: name,
+              startFinishLine: line,
+            );
+        // Re-split this user's stored sessions against the moved line,
+        // then re-score sector times for the rebuilt laps.
+        await ref
+            .read(lapMaintenanceServiceProvider)
+            .rescoreCircuit(circuitId: circuitId, userId: user.id);
+        await ref
+            .read(sectorRepositoryProvider)
+            .rescoreCircuitSectorTimes(circuitId);
+        ref.read(syncServiceProvider).requestSync();
+      } else {
+        circuit = await ref.read(circuitRepositoryProvider).createCircuit(
+          userId: user.id,
+          name: name,
+          gpsLat: (start.latitude + end.latitude) / 2,
+          gpsLng: (start.longitude + end.longitude) / 2,
+          startFinishLine: line,
+        );
+      }
       if (mounted) Navigator.of(context).pop(circuit);
     } catch (e) {
       if (mounted) {
@@ -101,7 +161,7 @@ class _CircuitCreateScreenState extends ConsumerState<CircuitCreateScreen> {
     return Scaffold(
       backgroundColor: AppColors.white,
       appBar: AppBar(
-        title: const Text('New Circuit'),
+        title: Text(_isEdit ? 'Edit Circuit' : 'New Circuit'),
         leading: IconButton(
           icon: const Icon(LucideIcons.x),
           onPressed: () => Navigator.of(context).pop(),
@@ -215,7 +275,7 @@ class _CircuitCreateScreenState extends ConsumerState<CircuitCreateScreen> {
                             color: AppColors.white,
                           ),
                         )
-                      : const Text('Save Circuit'),
+                      : Text(_isEdit ? 'Save & Re-score Laps' : 'Save Circuit'),
                 ),
               ),
             ),

@@ -17,19 +17,19 @@
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>2.0.0</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>TestTrack needs your location to record GPS traces during track sessions.</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>TestTrack needs continuous location access to record your track session while the app is in the background.</string>
-	<key>NSMotionUsageDescription</key>
-	<string>TestTrack uses motion sensors to capture telemetry data (acceleration, rotation) during track sessions.</string>
+	<string>30</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>TestTrack uses HealthKit to keep recording active during track sessions.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>TestTrack creates a workout session to maintain background GPS recording during track sessions.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>TestTrack needs continuous location access to record your track session while the app is in the background.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>TestTrack needs your location to record GPS traces during track sessions.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>TestTrack uses motion sensors to capture telemetry data (acceleration, rotation) during track sessions.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>workout-processing</string>

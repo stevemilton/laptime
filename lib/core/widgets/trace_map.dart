@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -12,6 +14,25 @@ List<LatLng> parseTraceJson(String? traceJson) {
   return TraceCodec.decode(traceJson)
       .map((p) => LatLng(p.lat, p.lng))
       .toList();
+}
+
+/// Parses a circuit's start/finish line JSON (`[[lat, lng], [lat, lng]]`)
+/// into map points, or null when absent/malformed.
+List<LatLng>? parseStartFinishLineJson(String? lineJson) {
+  if (lineJson == null || lineJson.isEmpty) return null;
+  try {
+    final decoded = jsonDecode(lineJson) as List;
+    if (decoded.length < 2) return null;
+    return [
+      for (final point in decoded.take(2))
+        LatLng(
+          ((point as List)[0] as num).toDouble(),
+          (point[1] as num).toDouble(),
+        ),
+    ];
+  } catch (_) {
+    return null;
+  }
 }
 
 /// Computes the [LatLngBounds] that encloses all given points,
@@ -57,6 +78,7 @@ class TraceMap extends StatelessWidget {
     this.strokeWidth = 3.0,
     this.showStartFinish = true,
     this.interactive = true,
+    this.startFinishLine,
   });
 
   /// Primary GPS trace as [LatLng] points.
@@ -64,6 +86,10 @@ class TraceMap extends StatelessWidget {
 
   /// Optional second trace for overlay comparison.
   final List<LatLng>? trace2;
+
+  /// Optional circuit start/finish line (two points), drawn in red so the
+  /// driver can see whether their driving line actually crosses it.
+  final List<LatLng>? startFinishLine;
 
   /// Colour of the primary trace line.
   final Color color1;
@@ -86,7 +112,7 @@ class TraceMap extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Combine all points to compute bounds
-    final allPoints = [...trace1, ...?trace2];
+    final allPoints = [...trace1, ...?trace2, ...?startFinishLine];
     final bounds = boundsFromPoints(allPoints);
 
     if (bounds == null || trace1.isEmpty) {
@@ -133,6 +159,14 @@ class TraceMap extends StatelessWidget {
                   color: color1,
                   strokeWidth: strokeWidth,
                 ),
+                // Circuit start/finish line above the traces
+                if (startFinishLine != null && startFinishLine!.length >= 2)
+                  Polyline(
+                    points: startFinishLine!,
+                    color: AppColors.red,
+                    strokeWidth: 3,
+                    pattern: const StrokePattern.dotted(),
+                  ),
               ],
             ),
 

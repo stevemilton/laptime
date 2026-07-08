@@ -50,6 +50,7 @@ class _RecordingView extends ConsumerWidget {
     final lastLap = state?.lastLapMs;
     final bestLap = state?.bestLapMs;
     final accuracy = state?.gpsAccuracy;
+    final isArmed = state?.isLapDetectionArmed ?? false;
 
     return Scaffold(
       backgroundColor: AppColors.white,
@@ -105,12 +106,34 @@ class _RecordingView extends ConsumerWidget {
 
               const SizedBox(height: 8),
 
-              // Lap counter
+              // Lap counter + timing mode. A driver must be able to tell at
+              // a glance that laps are (or aren't) being timed automatically.
               Text(
                 lapCount > 0 ? 'LAP $lapCount' : 'WAITING FOR FIRST LAP',
                 style: AppTypography.sectionLabel.copyWith(
                   color: AppColors.textTertiary,
                 ),
+              ),
+              const SizedBox(height: 6),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    isArmed ? LucideIcons.flag : LucideIcons.hand,
+                    size: 12,
+                    color: isArmed ? AppColors.green : AppColors.gold,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    isArmed
+                        ? 'AUTO LAP TIMING ON'
+                        : 'MANUAL LAPS — NO START/FINISH LINE',
+                    style: AppTypography.sectionLabel.copyWith(
+                      fontSize: 10,
+                      color: isArmed ? AppColors.green : AppColors.gold,
+                    ),
+                  ),
+                ],
               ),
 
               const SizedBox(height: 20),

@@ -24,6 +24,7 @@ class RecordingState {
     required this.bestLapMs,
     required this.gpsAccuracy,
     required this.gpsPoints,
+    this.isLapDetectionArmed = false,
     this.speedMps,
     this.weather,
   });
@@ -37,6 +38,11 @@ class RecordingState {
   final int? bestLapMs;
   final double? gpsAccuracy;
   final List<GpsPoint> gpsPoints;
+
+  /// Whether a start/finish line is armed (automatic lap timing). False
+  /// means laps only split via the Manual Lap button — surfaced in the UI
+  /// so a driver notices before wasting a session.
+  final bool isLapDetectionArmed;
 
   /// Current GPS speed in m/s (Doppler), for live display.
   final double? speedMps;
@@ -100,6 +106,7 @@ class RecordingRepository {
         bestLapMs: _bestLapMs,
         gpsAccuracy: _locationService.lastPoint?.accuracy,
         gpsPoints: _allPointsSnapshot,
+        isLapDetectionArmed: _lapDetection.isArmed,
         speedMps: _locationService.lastPoint?.speed,
         weather: _weather,
       );

@@ -321,6 +321,8 @@ class _LapDetailScreenState extends ConsumerState<LapDetailScreen> {
     final points = parseTraceJson(_lap?.traceJson);
     return TraceMap(
       trace1: points,
+      startFinishLine:
+          parseStartFinishLineJson(_circuit?.startFinishLineJson),
       height: 220,
       interactive: true,
     );

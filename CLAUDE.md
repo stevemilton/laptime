@@ -39,9 +39,9 @@ lib/
 ## Architecture Principles
 1. **Offline-first writes**: All mutations written to Drift (SQLite) first, synced to Supabase via a strictly FIFO queue (parent rows enqueued before children). Sync payloads are built by `SyncPayloads` (lib/core/services/sync_payloads.dart) — every key must match a remote column; inserts/updates execute as upserts, so payloads must be full rows. Multi-user reads (feed, leaderboards, team members, circuits) are remote-first with the local DB as cache.
 2. **Never block recording**: Weather is fire-and-forget, sync is async, lap state transitions are synchronous with persistence deferred.
-3. **Pure geometry lap detection**: 2D line-segment intersection with tolerance, no cloud dependency. Armed from the selected circuit's start/finish line.
+3. **Pure geometry lap detection**: 2D line-segment intersection with tolerance, no cloud dependency. Armed from the selected circuit's start/finish line. The drawn line is extended ~10m past each endpoint into a virtual gate, and crossings below 5 m/s are ignored (parked GPS jitter, walking).
 4. **Retroactive sector scoring**: Sector creation scores all historical laps; finishing a session scores its laps against all of the circuit's sectors.
-5. **Trace format v2**: lap traces are JSON arrays of `[lng, lat, tMs, speedMps]` (see `TraceCodec` in lib/core/utils/trace_codec.dart). GPS Doppler speed is the only speed source — never integrate accelerometer data. Use `userAccelerometerEventStream` (gravity-removed) for G channels.
+5. **Trace format v2**: lap traces are JSON arrays of `[lng, lat, tMs, speedMps]` (see `TraceCodec` in lib/core/utils/trace_codec.dart). GPS Doppler speed is the only speed source — never integrate accelerometer data. Use `userAccelerometerEventStream` (gravity-removed) for G channels. iPhone GPS delivers ~1Hz fixes (~25m between points at 90km/h) — code consuming traces must interpolate rather than assume dense fixes.
 
 ## Design System
 - Primary purple: `#5B3491`, Deep: `#1E0F35`, Bright: `#7B4DB8`

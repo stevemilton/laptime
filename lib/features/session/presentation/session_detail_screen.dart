@@ -6,13 +6,19 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
+import '../../../core/constants/app_constants.dart';
 import '../../../core/database/app_database.dart';
+import '../../../core/providers/sync_provider.dart';
+import '../../../core/services/lap_maintenance_service.dart';
 import '../../../core/services/weather_service.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/format_utils.dart';
 import '../../../core/widgets/widgets.dart';
 import '../../../core/providers/preferences_provider.dart';
+import '../../recording/presentation/circuit_create_screen.dart';
+import '../../sectors/data/sector_repository.dart';
 import '../data/session_repository.dart';
 
 /// Session detail view.
@@ -34,6 +40,7 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
   LocalCircuit? _circuit;
   LocalCar? _car;
   List<LocalLap> _laps = [];
+  bool _circuitHasSectors = true;
   bool _isLoading = true;
 
   @override
@@ -49,8 +56,13 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
     if (session == null || !mounted) return;
 
     LocalCircuit? circuit;
+    var circuitHasSectors = true;
     if (session.circuitId != null) {
       circuit = await repo.getCircuit(session.circuitId!);
+      final sectors = await ref
+          .read(sectorRepositoryProvider)
+          .getCircuitSectors(session.circuitId!);
+      circuitHasSectors = sectors.isNotEmpty;
     }
 
     LocalCar? car;
@@ -67,8 +79,65 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
       _circuit = circuit;
       _car = car;
       _laps = laps;
+      _circuitHasSectors = circuitHasSectors;
       _isLoading = false;
     });
+  }
+
+  /// Open the circuit's start/finish line for editing; on save, all of the
+  /// user's sessions at the circuit (including this one) are re-scored.
+  Future<void> _editStartFinishLine() async {
+    final circuit = _circuit;
+    if (circuit == null) return;
+
+    final updated = await Navigator.of(context).push<LocalCircuit>(
+      MaterialPageRoute(
+        builder: (_) => CircuitCreateScreen(
+          initialLat: circuit.gpsLat,
+          initialLng: circuit.gpsLng,
+          editCircuit: circuit,
+        ),
+      ),
+    );
+    if (updated == null || !mounted) return;
+
+    await _loadData();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Start/finish line updated — laps re-scored'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _deleteLap(LocalLap lap) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Delete Lap ${lap.lapNumber}?'),
+        content: const Text(
+          'This removes the lap, its telemetry, and its sector times. '
+          'This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await ref.read(lapMaintenanceServiceProvider).deleteLap(lap.id);
+    ref.read(syncServiceProvider).requestSync();
+    await _loadData();
   }
 
   int? get _bestLapMs {
@@ -92,6 +161,12 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
           style: AppTypography.headlineSmall,
         ),
         actions: [
+          if (_circuit != null)
+            IconButton(
+              icon: const Icon(LucideIcons.flag, size: 20),
+              tooltip: 'Fix start/finish line',
+              onPressed: _editStartFinishLine,
+            ),
           IconButton(
             icon: const Icon(LucideIcons.pencil, size: 20),
             onPressed: () {
@@ -134,6 +209,13 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
 
         // Stats row
         _buildStatsRow(session),
+
+        // Sector creation nudge: enough laps here, but the circuit has no
+        // sectors yet — nobody finds retroactive leaderboards on their own.
+        if (_circuit != null &&
+            !_circuitHasSectors &&
+            _laps.length >= AppConstants.minLapsForSectorCreation)
+          _buildSectorNudge(),
 
         const SizedBox(height: 8),
 
@@ -280,6 +362,49 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
     );
   }
 
+  Widget _buildSectorNudge() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      child: AppCard(
+        onTap: () => context.push('/sector/from-lap'),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: AppColors.purplePale,
+                borderRadius: BorderRadius.circular(AppRadii.sm),
+              ),
+              child: const Icon(LucideIcons.splitSquareHorizontal,
+                  size: 18, color: AppColors.purple),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Create sectors for this circuit',
+                      style: AppTypography.bodyMedium
+                          .copyWith(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Split the track to compare your pace corner by corner',
+                    style: AppTypography.bodySmall
+                        .copyWith(color: AppColors.textTertiary),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(LucideIcons.chevronRight,
+                size: 16, color: AppColors.textTertiary),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildLapRow(LocalLap lap) {
     final bestMs = _bestLapMs;
     final isBest = bestMs != null && lap.durationMs == bestMs;
@@ -289,7 +414,26 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 3),
-      child: AppCard(
+      child: Dismissible(
+        key: ValueKey(lap.id),
+        direction: DismissDirection.endToStart,
+        // The dialog owns the decision; the row itself never auto-dismisses
+        // (deletion reloads the list, which removes the row).
+        confirmDismiss: (_) async {
+          await _deleteLap(lap);
+          return false;
+        },
+        background: Container(
+          alignment: Alignment.centerRight,
+          padding: const EdgeInsets.only(right: 20),
+          decoration: BoxDecoration(
+            color: AppColors.red,
+            borderRadius: BorderRadius.circular(AppRadii.md),
+          ),
+          child: const Icon(LucideIcons.trash2,
+              size: 18, color: AppColors.white),
+        ),
+        child: AppCard(
         onTap: () {
           context.push('/session/${widget.sessionId}/lap/${lap.id}');
         },
@@ -339,6 +483,7 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
               color: AppColors.textTertiary,
             ),
           ],
+        ),
         ),
       ),
     );

@@ -149,6 +149,45 @@ class CircuitRepository {
     );
     return circuit;
   }
+
+  /// Update a circuit's name and/or start/finish line and enqueue for sync.
+  ///
+  /// The circuit's reference position follows the line midpoint so nearest-
+  /// circuit detection stays anchored to the start/finish straight. The
+  /// server may reject the update for circuits created by another user
+  /// (RLS); the local edit still applies for this device.
+  Future<LocalCircuit?> updateCircuit({
+    required String circuitId,
+    String? name,
+    List<List<double>>? startFinishLine,
+  }) async {
+    final companion = LocalCircuitsCompanion(
+      name: name != null ? Value(name) : const Value.absent(),
+      startFinishLineJson: startFinishLine != null
+          ? Value(jsonEncode(startFinishLine))
+          : const Value.absent(),
+      gpsLat: startFinishLine != null
+          ? Value((startFinishLine[0][0] + startFinishLine[1][0]) / 2)
+          : const Value.absent(),
+      gpsLng: startFinishLine != null
+          ? Value((startFinishLine[0][1] + startFinishLine[1][1]) / 2)
+          : const Value.absent(),
+    );
+    await (_db.update(_db.localCircuits)
+          ..where((t) => t.id.equals(circuitId)))
+        .write(companion);
+
+    final circuit = await getCircuit(circuitId);
+    if (circuit != null) {
+      await _db.enqueueSync(
+        targetTable: 'circuits',
+        operation: 'update',
+        recordId: circuitId,
+        payloadJson: jsonEncode(SyncPayloads.circuit(circuit)),
+      );
+    }
+    return circuit;
+  }
 }
 
 /// Riverpod provider for [CircuitRepository].

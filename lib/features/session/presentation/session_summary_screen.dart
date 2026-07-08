@@ -4,11 +4,18 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../../core/database/app_database.dart';
+import '../../../core/providers/database_provider.dart';
+import '../../../core/providers/preferences_provider.dart';
+import '../../../core/providers/supabase_provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/format_utils.dart';
 import '../data/session_repository.dart';
+
+/// One-time prompt flag: shown after saving a session while the profile
+/// is still the "Driver" default (or the garage is empty).
+const _kProfileNudgeShownKey = 'profile_nudge_shown';
 
 /// Post-recording summary screen.
 ///
@@ -71,7 +78,63 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
   }
 
   Future<void> _onSave() async {
+    final nudged = await _maybeShowProfileNudge();
+    if (nudged || !mounted) return;
     context.go('/session/${widget.sessionId}/edit');
+  }
+
+  /// After a session is saved with a default profile, prompt once to set
+  /// a name and add a car — the moment a driver has data worth attributing.
+  /// Returns true when the user chose to go set up their profile.
+  Future<bool> _maybeShowProfileNudge() async {
+    final prefs = ref.read(sharedPrefsProvider).value;
+    if (prefs == null || prefs.getBool(_kProfileNudgeShownKey) == true) {
+      return false;
+    }
+    final user = ref.read(currentUserProvider);
+    if (user == null) return false;
+
+    final db = ref.read(databaseProvider);
+    final profile = await db.getProfile(user.id);
+    final hasName = profile != null &&
+        profile.displayName.trim().isNotEmpty &&
+        profile.displayName != 'Driver';
+    final cars = await (db.select(db.localCars)
+          ..where((t) => t.userId.equals(user.id))
+          ..limit(1))
+        .get();
+    if (hasName && cars.isNotEmpty) return false;
+
+    await prefs.setBool(_kProfileNudgeShownKey, true);
+    if (!mounted) return false;
+    final goToProfile = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Nice driving — who was that?'),
+        content: Text(
+          !hasName
+              ? 'Set your driver name so your laps show up as you on '
+                  'leaderboards and the feed. You can add your car too.'
+              : 'Add your car to the garage so sessions and leaderboard '
+                  'times show what you were driving.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Later'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(!hasName ? 'Set Up Profile' : 'Add Car'),
+          ),
+        ],
+      ),
+    );
+    if (goToProfile == true && mounted) {
+      context.go(!hasName ? '/edit-profile' : '/garage');
+      return true;
+    }
+    return false;
   }
 
   Future<void> _onDiscard() async {

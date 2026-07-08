@@ -22,11 +22,16 @@ class LineCrossing {
 /// fall on opposite sides of this line, a lap crossing is detected.
 ///
 /// Requirements:
+/// - The drawn line is extended by
+///   [AppConstants.startFinishGateExtensionMeters] past each endpoint so a
+///   slightly misplaced line still catches the driving line.
 /// - Minimum ±[AppConstants.startFinishToleranceM] from the line before
 ///   allowing another crossing (prevents double-counting).
+/// - Ignores crossings below [AppConstants.minCrossingSpeedMps] (GPS jitter
+///   while parked, walking pace).
 /// - Ignores crossings when GPS accuracy exceeds threshold.
 class LapDetectionService {
-  /// Start/finish line endpoints (set from circuit data).
+  /// Start/finish gate endpoints (drawn line extended past each end).
   double? _sfLat1, _sfLng1, _sfLat2, _sfLng2;
 
   /// Previous GPS point for segment crossing detection.
@@ -36,7 +41,8 @@ class LapDetectionService {
   DateTime? _lastCrossingTime;
 
   /// Minimum time between crossings (prevents double-triggers).
-  static const _minCrossingInterval = Duration(seconds: 10);
+  static const _minCrossingInterval =
+      Duration(seconds: AppConstants.minCrossingIntervalSeconds);
 
   /// Whether we've moved far enough from the line to allow another crossing.
   bool _hasMovedAway = true;
@@ -53,10 +59,17 @@ class LapDetectionService {
     double lat2,
     double lng2,
   ) {
-    _sfLat1 = lat1;
-    _sfLng1 = lng1;
-    _sfLat2 = lat2;
-    _sfLng2 = lng2;
+    final gate = GeoUtils.extendLineSegment(
+      lat1,
+      lng1,
+      lat2,
+      lng2,
+      AppConstants.startFinishGateExtensionMeters,
+    );
+    _sfLat1 = gate.lat1;
+    _sfLng1 = gate.lng1;
+    _sfLat2 = gate.lat2;
+    _sfLng2 = gate.lng2;
     _previousPoint = null;
     _lastCrossingTime = null;
     _hasMovedAway = true;
@@ -71,6 +84,13 @@ class LapDetectionService {
 
     // Skip if GPS accuracy is too poor
     if (point.accuracy > AppConstants.gpsMinAccuracyMeters) {
+      _previousPoint = point;
+      return null;
+    }
+
+    // Skip below crossing speed: a parked car's GPS jitter can wander across
+    // the line, and walking the track must not start a lap.
+    if (point.speed < AppConstants.minCrossingSpeedMps) {
       _previousPoint = point;
       return null;
     }

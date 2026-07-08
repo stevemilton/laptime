@@ -2,14 +2,20 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:laptime/core/services/lap_detection_service.dart';
 import 'package:laptime/core/services/location_service.dart';
 
-GpsPoint _point(double lat, double lng, int tMs, {double accuracy = 5}) {
+GpsPoint _point(
+  double lat,
+  double lng,
+  int tMs, {
+  double accuracy = 5,
+  double speed = 40,
+}) {
   final start = DateTime(2026, 1, 1, 12, 0, 0);
   return GpsPoint(
     latitude: lat,
     longitude: lng,
     altitude: 100,
     accuracy: accuracy,
-    speed: 40,
+    speed: speed,
     heading: 0,
     timestamp: start.add(Duration(milliseconds: tMs)),
   );
@@ -68,7 +74,7 @@ void main() {
     expect(first, isNotNull);
 
     // Move away beyond tolerance, then cross again 3 seconds later —
-    // inside the 10 s debounce window, so it must not trigger.
+    // inside the 5 s debounce window, so it must not trigger.
     service.processPoint(_point(0, 0.002, 3000)); // >15 m from line
     service.processPoint(_point(0, -0.001, 4000));
     final second = service.processPoint(_point(0, 0.001, 5000));
@@ -102,5 +108,51 @@ void main() {
 
     // ...and a re-cross 2 seconds later is a double-trigger: debounced.
     expect(service.processPoint(_point(0, 0.001, 90000)), isNull);
+  });
+
+  // The Skegness failure: the driving line passed a few metres beyond the
+  // drawn endpoint every lap, so 9 of 10 crossings were missed.
+  test('detects a crossing just beyond the drawn line endpoint', () {
+    final service = arm();
+    // Drawn line ends at lat 0.0002 (~22 m); this path crosses at ~28 m,
+    // inside the 10 m gate extension.
+    service.processPoint(_point(0.00025, -0.001, 0));
+    expect(service.processPoint(_point(0.00025, 0.001, 2000)), isNotNull);
+  });
+
+  test('does not detect a crossing far beyond the gate extension', () {
+    final service = arm();
+    // ~39 m from the line centre: ~17 m past the endpoint, outside the
+    // 10 m extension.
+    service.processPoint(_point(0.00035, -0.001, 0));
+    expect(service.processPoint(_point(0.00035, 0.001, 2000)), isNull);
+  });
+
+  // The other Skegness failure: the recorded lap started while the car sat
+  // parked next to the line (GPS jitter), and a walking-pace loop set a
+  // 39 s "personal best".
+  test('ignores crossings below the minimum speed', () {
+    final service = arm();
+    service.processPoint(_point(0, -0.001, 0, speed: 1.5));
+    expect(
+      service.processPoint(_point(0, 0.001, 2000, speed: 1.5)),
+      isNull,
+    );
+
+    // Same geometry at driving speed fires.
+    final driving = arm();
+    driving.processPoint(_point(0, -0.001, 0));
+    expect(driving.processPoint(_point(0, 0.001, 2000)), isNotNull);
+  });
+
+  test('laps shorter than 10 s are no longer swallowed by the debounce', () {
+    final service = arm();
+    service.processPoint(_point(0, -0.001, 0));
+    expect(service.processPoint(_point(0, 0.001, 1000)), isNotNull);
+
+    // A ~6-second kart lap: drive away east, then cross back west —
+    // inside the old 10 s debounce, outside the new 5 s one.
+    service.processPoint(_point(0, 0.002, 3000));
+    expect(service.processPoint(_point(0, -0.001, 7000)), isNotNull);
   });
 }

@@ -60,6 +60,36 @@ abstract final class GeoUtils {
     return null;
   }
 
+  /// Extend a line segment by [meters] beyond each endpoint.
+  ///
+  /// Compensates for imprecise hand-drawn start/finish lines: the actual
+  /// driving line can pass a few metres outside the drawn endpoints.
+  static ({double lat1, double lng1, double lat2, double lng2})
+      extendLineSegment(
+    double lat1,
+    double lng1,
+    double lat2,
+    double lng2,
+    double meters,
+  ) {
+    const mPerDegLat = 111320.0;
+    final mPerDegLng = mPerDegLat * cos(_toRadians((lat1 + lat2) / 2));
+    final dxM = (lng2 - lng1) * mPerDegLng;
+    final dyM = (lat2 - lat1) * mPerDegLat;
+    final len = sqrt(dxM * dxM + dyM * dyM);
+    if (len == 0) {
+      return (lat1: lat1, lng1: lng1, lat2: lat2, lng2: lng2);
+    }
+    final ux = dxM / len;
+    final uy = dyM / len;
+    return (
+      lat1: lat1 - uy * meters / mPerDegLat,
+      lng1: lng1 - ux * meters / mPerDegLng,
+      lat2: lat2 + uy * meters / mPerDegLat,
+      lng2: lng2 + ux * meters / mPerDegLng,
+    );
+  }
+
   /// Minimum distance from a point to a line segment, in meters.
   ///
   /// Used for proximity checks to start/finish lines.
